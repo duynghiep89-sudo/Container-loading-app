@@ -9,7 +9,7 @@ st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- HÀM VẼ 3D TỐI ƯU DIỆN TÍCH ---
+# --- HÀM VẼ 3D ---
 def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
@@ -17,7 +17,7 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     # 1. Sàn gỗ
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0], color='#8B4513', opacity=1, showlegend=False))
     
-    # 2. Tường thép giả lập (Mờ hơn nữa để tập trung vào hàng)
+    # 2. Tường thép giả lập (Cố định vách để không bị mất hình khi xoay)
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, 0, 0], z=[0, 0, H, H], color='gray', opacity=0.05, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[W, W, W, W], z=[0, 0, H, H], color='gray', opacity=0.05, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, 0, 0, 0], y=[0, W, W, 0], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
@@ -48,12 +48,21 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             mode='lines', line=dict(color='black', width=1.5), showlegend=False, hoverinfo='none'
         ))
 
+    # TỐI ƯU GÓC NHÌN VÀ GHI CHÚ
     fig.update_layout(
-        scene=dict(xaxis_title='Dài', yaxis_title='Rộng', zaxis_title='Cao', aspectmode='data'),
-        # Đưa chú thích xuống dưới để mở rộng diện tích hiển thị 3D
-        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, bgcolor="rgba(255, 255, 255, 0.5)"),
+        scene=dict(
+            xaxis=dict(title='Dài', range=[0, L]),
+            yaxis=dict(title='Rộng', range=[0, W]),
+            zaxis=dict(title='Cao', range=[0, H]),
+            aspectmode='data',
+            camera=dict(
+                eye=dict(x=2, y=2, z=1.5) # Đặt góc nhìn mặc định từ cửa vào
+            )
+        ),
+        # Ghi chú nhỏ bên trái như cũ
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.5)", font=dict(size=10)),
         margin=dict(l=0, r=0, b=0, t=0),
-        height=700 # Tăng chiều cao khung hình 3D
+        height=700
     )
     return fig
 
@@ -119,47 +128,41 @@ if not final_df.empty:
                 packer.pack()
                 selected_bin = packer.bins[0]
 
-                # --- HIỂN THỊ KẾT QUẢ RỘNG TOÀN MÀN HÌNH ---
+                # --- HIỂN THỊ KẾT QUẢ ---
                 st.divider()
                 st.subheader("📍 PHƯƠNG ÁN ĐÓNG HÀNG")
                 
-                # Hiển thị biểu đồ 3D lớn ở giữa
                 st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
                 
-                # Hiển thị thông số phụ ở dưới biểu đồ
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Tổng CBM hàng", f"{total_cargo_cbm:.3f} m³")
                 c2.metric("Số kiện đã xếp", f"{len(selected_bin.items)} / {len(packer.items)}")
                 c3.metric("Hiệu suất lấp đầy", f"{(sum(float(i.get_dimension()[0])*float(i.get_dimension()[1])*float(i.get_dimension()[2]) for i in selected_bin.items)/(L*W*H))*100:.2f} %")
 
-                # NÚT XUẤT PDF SỬ DỤNG JAVASCRIPT ĐỂ FIX LỖI KHÔNG IN ĐƯỢC
+                # SỬA LỖI NÚT IN
                 st.divider()
-                st.write("👉 *Hãy xoay góc nhìn 3D phù hợp nhất trước khi nhấn nút bên dưới:*")
+                st.write("👉 *Xoay góc 3D ưng ý rồi nhấn nút:*")
                 
-                # Sử dụng HTML/JS để kích hoạt lệnh in trực tiếp từ cửa sổ cha
+                # Code JS để in cửa sổ cha của iframe
                 st.components.v1.html(
                     """
-                    <html>
-                    <body>
-                    <button onclick="parent.window.print()" style="
+                    <script>
+                    function printPage() {
+                        window.parent.print();
+                    }
+                    </script>
+                    <button onclick="printPage()" style="
                         background-color: #ff4b4b; 
                         color: white; 
                         padding: 15px 32px; 
-                        text-align: center; 
-                        text-decoration: none; 
-                        display: inline-block; 
-                        font-size: 16px; 
-                        margin: 4px 2px; 
-                        cursor: pointer; 
                         border: none; 
                         border-radius: 8px; 
                         width: 100%;
                         font-weight: bold;
+                        cursor: pointer;
                     ">
                         🖨️ XUẤT FILE PDF / IN BÁO CÁO
                     </button>
-                    </body>
-                    </html>
                     """,
                     height=100,
                 )
