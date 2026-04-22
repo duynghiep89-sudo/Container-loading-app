@@ -14,7 +14,7 @@ def draw_3d_loading(bin_obj):
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
     
     for i, item in enumerate(bin_obj.items):
-        x, y, z = item.position
+        x, y, z = [float(p) for p in item.position]
         w, h, d_item = item.get_dimension()
         color = colors[i % len(colors)]
         
@@ -72,7 +72,8 @@ if uploaded_file:
         
         # HIỂN THỊ KẾT QUẢ
         selected_bin = packer.bins[0]
-        used_vol = float(selected_bin.get_total_volume())
+        # Tính tổng thể tích hàng đã xếp bằng cách cộng dồn từng item
+        used_vol = sum(float(i.get_volume()) for i in selected_bin.items)
         total_vol = float(selected_bin.volume)
         utilization = (used_vol / total_vol) * 100
 
