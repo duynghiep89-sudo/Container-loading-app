@@ -34,7 +34,7 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
 
-    # 1. Sàn gỗ & Tường
+    # Sàn gỗ & Tường
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0], color='#8B4513', opacity=1, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, 0, 0], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[W, W, W, W], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
@@ -105,23 +105,20 @@ with st.sidebar:
 
     st.divider()
     st.header("🗂️ Danh mục SKU Hệ thống")
-    # Cho phép nhập danh mục hoặc tải lên
     master_file = st.file_uploader("Tải danh mục SKU (CSV)", type="csv")
+    
     if master_file:
         master_sku_df = pd.read_csv(master_file)
     else:
-        # Danh mục mặc định nếu không có file
         master_sku_df = pd.DataFrame({
             'SKU': ['SOFA_A', 'TABLE_B', 'CHAIR_C'], 
-            'Width': [850, 1000, 500], 
-            'Height': [900, 750, 1100], 
-            'Depth': [2100, 1600, 550], 
-            'Weight': [75, 45, 12]
+            'Width': [850.0, 1000.0, 500.0], 
+            'Height': [900.0, 750.0, 1100.0], 
+            'Depth': [2100.0, 1600.0, 550.0], 
+            'Weight': [75.0, 45.0, 12.0]
         })
     
-    st.write("Chỉnh sửa danh mục tại đây:")
     edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
-    
     st.divider()
     template_df = pd.DataFrame({'SKU': ['SOFA_A'], 'Width': [850], 'Height': [900], 'Depth': [2100], 'Weight': [75], 'Quantity': [5]})
     st.download_button(label="📥 Tải file mẫu CSV hàng hóa", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
@@ -138,11 +135,10 @@ with tab1:
         final_df = pd.read_csv(uploaded_file)
 
 with tab2:
-    # Lấy danh sách SKU từ danh mục để làm dropdown
-    sku_list = edited_master['SKU'].unique().tolist()
+    sku_list = edited_master['SKU'].dropna().unique().tolist()
     
     column_config = {
-        "SKU": st.column_config.SelectboxColumn("Mã hàng (SKU)", options=sku_list, help="Chọn mã từ danh mục", required=True),
+        "SKU": st.column_config.SelectboxColumn("Mã hàng (SKU)", options=sku_list, required=True),
         "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d"),
         "Height": st.column_config.NumberColumn("Cao (mm)", format="%d"),
         "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)", format="%d"),
@@ -150,33 +146,34 @@ with tab2:
         "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
     }
     
-    # Tạo dataframe trống để người dùng nhập
     if "manual_df" not in st.session_state:
         st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
 
-    manual_data = st.data_editor(
-        st.session_state.manual_df, 
-        num_rows="dynamic", 
-        column_config=column_config, 
-        key="manual_input"
-    )
+    manual_data = st.data_editor(st.session_state.manual_df, num_rows="dynamic", column_config=column_config, key="manual_input")
 
-    # Xử lý tự động điền thông số khi SKU được chọn
+    # Kiểm tra thay đổi để Auto-fill
     if not manual_data.equals(st.session_state.manual_df):
-        # Duyệt qua các dòng để kiểm tra dòng nào mới chọn SKU nhưng chưa có thông số
+        needs_rerun = False
         for index, row in manual_data.iterrows():
-            if row['SKU'] in sku_list and pd.isna(row['Width']):
-                master_row = edited_master[edited_master['SKU'] == row['SKU']].iloc[0]
-                manual_data.at[index, 'Width'] = master_row['Width']
-                manual_data.at[index, 'Height'] = master_row['Height']
-                manual_data.at[index, 'Depth'] = master_row['Depth']
-                manual_data.at[index, 'Weight'] = master_row['Weight']
+            # Nếu có SKU nhưng các thông số khác đang trống (NaN) thì điền từ Master
+            if pd.notna(row['SKU']) and row['SKU'] in sku_list:
+                if pd.isna(row['Width']) or row['Width'] == 0:
+                    master_row = edited_master[edited_master['SKU'] == row['SKU']].iloc[0]
+                    manual_data.at[index, 'Width'] = master_row['Width']
+                    manual_data.at[index, 'Height'] = master_row['Height']
+                    manual_data.at[index, 'Depth'] = master_row['Depth']
+                    manual_data.at[index, 'Weight'] = master_row['Weight']
+                    needs_rerun = True
+        
         st.session_state.manual_df = manual_data
-        st.rerun()
+        if needs_rerun:
+            st.rerun()
 
-    if not manual_data.empty and manual_data.dropna(subset=['SKU']).shape[0] > 0:
-        clean_manual = manual_data.dropna(subset=['SKU'])
-        final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
+    if not manual_data.empty:
+        # Loại bỏ các dòng chưa nhập SKU hoặc thiếu kích thước quan trọng
+        clean_manual = manual_data.dropna(subset=['SKU', 'Width', 'Height', 'Depth'])
+        if not clean_manual.empty:
+            final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
 # --- XỬ LÝ TÍNH TOÁN ---
 if not final_df.empty:
@@ -184,36 +181,48 @@ if not final_df.empty:
     st.dataframe(final_df, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
+        # Ép kiểu dữ liệu về float để tránh lỗi py3dbp
+        for col in ['Width', 'Height', 'Depth', 'Weight', 'Quantity']:
+            final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
         
-        with st.spinner('🛠️ Đang tính toán...'):
-            final_df = final_df.sort_values(by='SKU')
-            sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
-            packer = Packer()
-            packer.add_bin(Bin(c_choice, L, W, H, M))
-            palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf', '#E15F99', '#222A2A']
-            sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
+        # Loại bỏ các dòng có kích thước = 0 để tránh lỗi thuật toán
+        final_df = final_df[(final_df['Width'] > 0) & (final_df['Height'] > 0) & (final_df['Depth'] > 0)]
 
-            for _, row in final_df.iterrows():
-                for _ in range(int(row['Quantity'])):
-                    # Lưu ý: py3dbp dùng Width, Height, Depth theo thứ tự trục
-                    packer.add_item(Item(row['SKU'], row['Depth'], row['Width'], row['Height'], row['Weight']))
+        if final_df.empty:
+            st.error("Dữ liệu hàng hóa không hợp lệ (kích thước phải lớn hơn 0).")
+        else:
+            total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
             
-            packer.pack()
-            selected_bin = packer.bins[0]
-            
-            st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cargo_cbm:.3f} m³")
-            st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
+            with st.spinner('🛠️ Đang tính toán...'):
+                packer = Packer()
+                packer.add_bin(Bin(c_choice, L, W, H, M))
+                
+                palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf', '#E15F99', '#222A2A']
+                sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
+                sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
 
-            st.components.v1.html(
-                """
-                <script>function printPage() { window.parent.print(); }</script>
-                <button onclick="printPage()" style="
-                    background-color: #ff4b4b; color: white; padding: 15px 32px; 
-                    border: none; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer;
-                ">
-                    🖨️ XUẤT FILE PDF CHO KHO (CHỈ IN SƠ ĐỒ)
-                </button>
-                """,
-                height=100,
-            )
+                for _, row in final_df.iterrows():
+                    for _ in range(int(row['Quantity'])):
+                        packer.add_item(Item(str(row['SKU']), float(row['Depth']), float(row['Width']), float(row['Height']), float(row['Weight'])))
+                
+                try:
+                    packer.pack()
+                    selected_bin = packer.bins[0]
+                    
+                    st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cargo_cbm:.3f} m³")
+                    st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
+
+                    st.components.v1.html(
+                        """
+                        <script>function printPage() { window.parent.print(); }</script>
+                        <button onclick="printPage()" style="
+                            background-color: #ff4b4b; color: white; padding: 15px 32px; 
+                            border: none; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer;
+                        ">
+                            🖨️ XUẤT FILE PDF CHO KHO (CHỈ IN SƠ ĐỒ)
+                        </button>
+                        """,
+                        height=100,
+                    )
+                except Exception as e:
+                    st.error(f"Lỗi trong quá trình tính toán: {e}")
