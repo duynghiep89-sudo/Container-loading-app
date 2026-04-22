@@ -2,10 +2,14 @@ import streamlit as st
 import pandas as pd
 from py3dbp import Packer, Bin, Item
 import plotly.graph_objects as go
+import os
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
-# --- ĐOẠN 1: CSS ĐỂ CHỈ IN PHẦN KẾT QUẢ (GIỮ NGUYÊN) ---
+# --- ĐƯỜNG DẪN MẶC ĐỊNH ---
+DEFAULT_PATH = r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
+
+# --- ĐOẠN 1: CSS ĐỂ CHỈ IN PHẦN KẾT QUẢ ---
 st.markdown("""
     <style>
     @media print {
@@ -72,7 +76,6 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             yaxis=dict(title='Rộng', range=[-100, W+100]),
             zaxis=dict(title='Cao', range=[-100, H+100]),
             aspectmode='data',
-            # Đã chỉnh sửa: dịch center y sang -0.2 để lệch về bên trái người dùng
             camera=dict(eye=dict(x=1.8, y=1.8, z=1.2), center=dict(x=0.2, y=-0.2, z=-0.3))
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)", font=dict(size=16)),
@@ -143,9 +146,27 @@ with st.sidebar:
 
     st.divider()
     st.header("🗂️ Danh mục SKU Hệ thống")
-    master_file = st.file_uploader("Tải danh mục SKU (CSV)", type="csv")
-    if master_file: master_sku_df = pd.read_csv(master_file)
-    else: master_sku_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
+    
+    # Logic nạp file mặc định
+    master_sku_df = pd.DataFrame()
+    if os.path.exists(DEFAULT_PATH):
+        try:
+            master_sku_df = pd.read_csv(DEFAULT_PATH)
+            st.info(f"✅ Đã nạp dữ liệu từ: {DEFAULT_PATH}")
+        except Exception as e:
+            st.error(f"Lỗi khi đọc file mặc định: {e}")
+    
+    # Nếu nạp file mặc định thất bại hoặc file không tồn tại, hiển thị uploader
+    master_file = st.file_uploader("Tải danh mục SKU mới (CSV)", type="csv")
+    if master_file:
+        master_sku_df = pd.read_csv(master_file)
+    elif master_sku_df.empty:
+        # Dữ liệu dự phòng nếu không tìm thấy file G:\ và cũng không upload file
+        master_sku_df = pd.DataFrame({
+            'SKU': ['SOFA_A', 'TABLE_B'], 
+            'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 
+            'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]
+        })
     
     edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
 
