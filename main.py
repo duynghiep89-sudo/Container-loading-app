@@ -9,18 +9,22 @@ st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- HÀM VẼ 3D NÂNG CAO ---
-def draw_3d_loading(bin_obj, sku_colors, sku_counts):
+# --- HÀM VẼ 3D TỐI ƯU BỐ CỤC ---
+def draw_3d_loading(bin_obj, sku_colors, sku_counts, container_type):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
 
     # 1. Sàn gỗ
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0], color='#8B4513', opacity=1, showlegend=False))
     
-    # 2. Tường thép
-    fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, 0, 0], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
-    fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[W, W, W, W], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
-    fig.add_trace(go.Mesh3d(x=[0, 0, 0, 0], y=[0, W, W, 0], z=[0, 0, H, H], color='gray', opacity=0.2, showlegend=False))
+    # 2. Tường thép giả lập
+    fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, 0, 0], z=[0, 0, H, H], color='gray', opacity=0.05, showlegend=False))
+    fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[W, W, W, W], z=[0, 0, H, H], color='gray', opacity=0.05, showlegend=False))
+    fig.add_trace(go.Mesh3d(x=[0, 0, 0, 0], y=[0, W, W, 0], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
+
+    # Thêm dòng tiêu đề Container vào Legend
+    fig.add_trace(go.Scatter3d(x=[None], y=[None], z=[None], mode='markers', 
+                               marker=dict(color='white'), name=f"📦 CONTAINER: {container_type}"))
 
     added_to_legend = set()
     for item in bin_obj.items:
@@ -49,10 +53,24 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
         ))
 
     fig.update_layout(
-        scene=dict(xaxis_title='Dài', yaxis_title='Rộng', zaxis_title='Cao', aspectmode='data'),
-        legend=dict(orientation="v", yanchor="bottom", y=0.01, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)"),
-        margin=dict(l=0, r=0, b=0, t=30),
-        height=800  # ĐÃ CẬP NHẬT: Kéo dài khung hình 3D xuống dưới
+        scene=dict(
+            xaxis=dict(title='Dài', range=[0, L]),
+            yaxis=dict(title='Rộng', range=[0, W]),
+            zaxis=dict(title='Cao', range=[0, H]),
+            aspectmode='data',
+            # Dịch chuyển khung hình lên phía trên (tỷ lệ 1/3 và 2/3)
+            domain=dict(x=[0, 1], y=[0.3, 1]),
+            camera=dict(eye=dict(x=1.8, y=1.8, z=1.2))
+        ),
+        # Cỡ chữ ghi chú lớn hơn (16)
+        legend=dict(
+            yanchor="top", y=0.99, 
+            xanchor="left", x=0.01, 
+            bgcolor="rgba(255, 255, 255, 0.7)",
+            font=dict(size=16)
+        ),
+        margin=dict(l=0, r=0, b=0, t=0),
+        height=900 # Tăng chiều cao tổng thể để hình to rõ
     )
     return fig
 
@@ -84,41 +102,26 @@ with st.sidebar:
     template_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850, 1000], 'Height': [900, 750], 'Depth': [2100, 1600], 'Weight': [75, 45], 'Quantity': [5, 10]})
     st.download_button(label="📥 Tải file mẫu CSV", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
 
-# --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
 tab1, tab2 = st.tabs(["📂 Tải file CSV", "✍️ Nhập tay trực tiếp"])
-
 final_df = pd.DataFrame()
 
 with tab1:
     uploaded_file = st.file_uploader("Kéo thả file CSV", type="csv")
-    if uploaded_file:
-        final_df = pd.read_csv(uploaded_file)
-
+    if uploaded_file: final_df = pd.read_csv(uploaded_file)
 with tab2:
-    st.write("Nhập thông số kiện hàng lẻ (Lưu ý đơn vị mm và kg):")
     column_config = {
-        "SKU": st.column_config.TextColumn("Mã hàng (SKU)", help="Nhập mã hàng không dấu", required=True),
-        "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d", min_value=1),
-        "Height": st.column_config.NumberColumn("Cao (mm)", format="%d", min_value=1),
-        "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)", format="%d", min_value=1),
-        "Weight": st.column_config.NumberColumn("Nặng (kg)", format="%d", min_value=0),
-        "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
+        "SKU": st.column_config.TextColumn("Mã hàng (SKU)", required=True),
+        "Width": st.column_config.NumberColumn("Rộng (mm)"),
+        "Height": st.column_config.NumberColumn("Cao (mm)"),
+        "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)"),
+        "Weight": st.column_config.NumberColumn("Nặng (kg)"),
+        "Quantity": st.column_config.NumberColumn("Số lượng", default=1)
     }
-    
-    manual_data = st.data_editor(
-        pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity']),
-        num_rows="dynamic",
-        column_config=column_config,
-        key="manual_input"
-    )
-    
+    manual_data = st.data_editor(pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity']), num_rows="dynamic", column_config=column_config, key="manual_input")
     if not manual_data.empty and manual_data.dropna(subset=['SKU']).shape[0] > 0:
         clean_manual = manual_data.dropna(subset=['SKU'])
-        if final_df.empty:
-            final_df = clean_manual
-        else:
-            final_df = pd.concat([final_df, clean_manual], ignore_index=True)
+        final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
 if not final_df.empty:
     st.write("Dữ liệu tổng hợp để tính toán:")
@@ -132,7 +135,7 @@ if not final_df.empty:
         if total_cargo_cbm > vessel_cbm:
             st.error(f"❌ VƯỢT DUNG TÍCH: Hàng ({total_cargo_cbm:.2f} m³) > Xe ({vessel_cbm:.2f} m³).")
         else:
-            with st.spinner('🛠️ Đang xử lý thuật toán tối ưu...'):
+            with st.spinner('🛠️ Đang xử lý...'):
                 final_df = final_df.sort_values(by='SKU')
                 sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
                 packer = Packer()
@@ -147,9 +150,4 @@ if not final_df.empty:
                 packer.pack()
                 selected_bin = packer.bins[0]
                 
-                if len(selected_bin.items) < len(packer.items):
-                    st.warning(f"⚠️ Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện.")
-                else:
-                    st.success(f"✅ Đã xếp đủ toàn bộ kiện hàng!")
-
-                st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
+                st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts, c_choice), use_container_width=True)
