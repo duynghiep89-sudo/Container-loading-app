@@ -69,7 +69,10 @@ with st.sidebar:
     st.header("⚙️ Cấu hình Phương tiện")
     c_choice = st.selectbox("Chọn phương tiện", list(cont_data.keys()))
     if c_choice == "Tùy chỉnh":
-        L, W, H, M = st.number_input("Dài (mm)", value=6000), st.number_input("Rộng (mm)", value=2300), st.number_input("Cao (mm)", value=2300), st.number_input("Tải trọng (kg)", value=15000)
+        L = st.number_input("Dài (mm)", value=6000)
+        W = st.number_input("Rộng (mm)", value=2300)
+        H = st.number_input("Cao (mm)", value=2300)
+        M = st.number_input("Tải trọng (kg)", value=15000)
     else:
         specs = cont_data[c_choice]
         L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
@@ -92,22 +95,35 @@ with tab1:
         final_df = pd.read_csv(uploaded_file)
 
 with tab2:
-    st.write("Nhập thông số kiện hàng lẻ:")
-    # Sử dụng data_editor để nhập liệu như Excel trực tiếp trên web
+    st.write("Nhập thông số kiện hàng lẻ (Lưu ý đơn vị mm và kg):")
+    # Định nghĩa cấu hình cột để hiển thị đơn vị (Yêu cầu mới)
+    column_config = {
+        "SKU": st.column_config.TextColumn("Mã hàng (SKU)", help="Nhập mã hàng không dấu", required=True),
+        "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d", min_value=1),
+        "Height": st.column_config.NumberColumn("Cao (mm)", format="%d", min_value=1),
+        "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)", format="%d", min_value=1),
+        "Weight": st.column_config.NumberColumn("Nặng (kg)", format="%d", min_value=0),
+        "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
+    }
+    
     manual_data = st.data_editor(
         pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity']),
         num_rows="dynamic",
+        column_config=column_config,
         key="manual_input"
     )
-    if not manual_data.empty and manual_data.dropna().shape[0] > 0:
+    
+    if not manual_data.empty and manual_data.dropna(subset=['SKU']).shape[0] > 0:
+        clean_manual = manual_data.dropna(subset=['SKU'])
         if final_df.empty:
-            final_df = manual_data.dropna()
+            final_df = clean_manual
         else:
-            final_df = pd.concat([final_df, manual_data.dropna()], ignore_index=True)
+            final_df = pd.concat([final_df, clean_manual], ignore_index=True)
 
 if not final_df.empty:
     st.write("Dữ liệu tổng hợp để tính toán:")
-    st.table(final_df)
+    # Đồng bộ lại tên cột để hiển thị đẹp
+    st.dataframe(final_df, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
         # TÍNH CBM
@@ -118,7 +134,7 @@ if not final_df.empty:
         if total_cargo_cbm > vessel_cbm:
             st.error(f"❌ VƯỢT DUNG TÍCH: Hàng ({total_cargo_cbm:.2f} m³) > Xe ({vessel_cbm:.2f} m³).")
         else:
-            with st.spinner('🛠️ Đang xử lý...'):
+            with st.spinner('🛠️ Đang xử lý thuật toán tối ưu...'):
                 final_df = final_df.sort_values(by='SKU')
                 sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
                 packer = Packer()
@@ -134,7 +150,7 @@ if not final_df.empty:
                 selected_bin = packer.bins[0]
                 
                 if len(selected_bin.items) < len(packer.items):
-                    st.warning(f"⚠️ Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện.")
+                    st.warning(f"⚠️ Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện. Kiểm tra lại kích thước kiện hàng so với cửa container!")
                 else:
                     st.success(f"✅ Đã xếp đủ toàn bộ kiện hàng!")
 
