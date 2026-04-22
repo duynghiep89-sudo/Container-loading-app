@@ -9,15 +9,15 @@ st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- HÀM VẼ 3D ---
-def draw_3d_loading(bin_obj, sku_colors, sku_counts):
+# --- HÀM VẼ 3D TỐI ƯU ---
+def draw_3d_loading(bin_obj, sku_colors, sku_counts, container_name):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
 
     # 1. Sàn gỗ
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0], color='#8B4513', opacity=1, showlegend=False))
     
-    # 2. Tường thép giả lập (Cố định vách để không bị mất hình khi xoay)
+    # 2. Vách container (Cố định khung để không bị mất hình khi xoay)
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, 0, 0], z=[0, 0, H, H], color='gray', opacity=0.05, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[W, W, W, W], z=[0, 0, H, H], color='gray', opacity=0.05, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, 0, 0, 0], y=[0, W, W, 0], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
@@ -48,49 +48,46 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             mode='lines', line=dict(color='black', width=1.5), showlegend=False, hoverinfo='none'
         ))
 
-    # TỐI ƯU GÓC NHÌN VÀ GHI CHÚ
+    # CẤU HÌNH GHI CHÚ VÀ TRỤC TỌA ĐỘ
     fig.update_layout(
+        title=dict(text=f"Sơ đồ xếp hàng: {container_name}", x=0.01, y=0.95),
         scene=dict(
             xaxis=dict(title='Dài', range=[0, L]),
             yaxis=dict(title='Rộng', range=[0, W]),
             zaxis=dict(title='Cao', range=[0, H]),
-            aspectmode='data',
-            camera=dict(
-                eye=dict(x=2, y=2, z=1.5) # Đặt góc nhìn mặc định từ cửa vào
-            )
+            aspectmode='data'
         ),
-        # Ghi chú nhỏ bên trái như cũ
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.5)", font=dict(size=10)),
-        margin=dict(l=0, r=0, b=0, t=0),
-        height=700
+        # Ghi chú: SKU cỡ chữ lớn hơn (14), nằm bên trái
+        legend=dict(
+            yanchor="top", y=0.99, 
+            xanchor="left", x=0.01, 
+            bgcolor="rgba(255, 255, 255, 0.6)",
+            font=dict(size=14) 
+        ),
+        margin=dict(l=0, r=0, b=0, t=50),
+        height=750
     )
     return fig
 
-# --- GIAO DIỆN CHÍNH ---
+# --- GIAO DIỆN ---
 st.markdown("<h1 style='text-align: center; color: #ff4b4b;'>🚚 Loading Map - GESIN</h1>", unsafe_allow_html=True)
 
 cont_data = {
     "40HC": [12032, 2352, 2698, 28000], "40DC": [12032, 2352, 2393, 28000],
-    "20GP": [5898, 2352, 2393, 28000], "45HC": [13556, 2352, 2698, 28000],
-    "40RF": [11590, 2290, 2250, 27000], "20RF": [5450, 2290, 2260, 24000],
-    "Tùy chỉnh": [0, 0, 0, 0]
+    "20GP": [5898, 2352, 2393, 28000], "45HC": [13556, 2352, 2698, 28000]
 }
 
 with st.sidebar:
     st.header("⚙️ Cấu hình")
     c_choice = st.selectbox("Chọn phương tiện", list(cont_data.keys()))
-    if c_choice == "Tùy chỉnh":
-        L, W, H, M = st.number_input("Dài", value=6000), st.number_input("Rộng", value=2300), st.number_input("Cao", value=2300), st.number_input("Tải", value=15000)
-    else:
-        specs = cont_data[c_choice]
-        L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
-        st.success(f"📌 {c_choice}: {L}x{W}x{H} mm")
+    specs = cont_data[c_choice]
+    L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
+    st.success(f"📌 {c_choice}: {L}x{W}x{H} mm")
     
     st.divider()
-    template_df = pd.DataFrame({'SKU': ['TABLE_A', 'CHAIR_B'], 'Width': [800, 500], 'Height': [750, 900], 'Depth': [1200, 500], 'Weight': [40, 15], 'Quantity': [10, 20]})
+    template_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [800, 1000], 'Height': [900, 750], 'Depth': [2000, 1500], 'Weight': [50, 30], 'Quantity': [5, 10]})
     st.download_button(label="📥 Tải file mẫu CSV", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
 
-st.subheader("📋 Nhập danh sách hàng hóa")
 tab1, tab2 = st.tabs(["📂 Tải CSV", "✍️ Nhập tay"])
 final_df = pd.DataFrame()
 
@@ -104,65 +101,46 @@ with tab2:
         final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
 if not final_df.empty:
-    with st.expander("🔍 Xem bảng dữ liệu chi tiết"):
-        st.dataframe(final_df, use_container_width=True, hide_index=True)
-
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
         total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
         vessel_cbm = (L/1000 * W/1000 * H/1000)
         
-        if total_cargo_cbm > vessel_cbm:
-            st.error(f"❌ VƯỢT DUNG TÍCH: Hàng ({total_cargo_cbm:.2f} m³) > Xe ({vessel_cbm:.2f} m³).")
-        else:
-            with st.spinner('🛠️ Đang tính toán...'):
-                final_df = final_df.sort_values(by='SKU')
-                sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
-                packer = Packer()
-                packer.add_bin(Bin(c_choice, L, W, H, M))
-                palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf', '#E15F99', '#222A2A']
-                sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
+        with st.spinner('🛠️ Đang tính toán...'):
+            sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
+            packer = Packer()
+            packer.add_bin(Bin(c_choice, L, W, H, M))
+            palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf', '#E15F99']
+            sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
 
-                for _, row in final_df.iterrows():
-                    for _ in range(int(row['Quantity'])):
-                        packer.add_item(Item(row['SKU'], row['Depth'], row['Width'], row['Height'], row['Weight']))
-                packer.pack()
-                selected_bin = packer.bins[0]
+            for _, row in final_df.iterrows():
+                for _ in range(int(row['Quantity'])):
+                    packer.add_item(Item(row['SKU'], row['Depth'], row['Width'], row['Height'], row['Weight']))
+            packer.pack()
+            selected_bin = packer.bins[0]
 
-                # --- HIỂN THỊ KẾT QUẢ ---
-                st.divider()
-                st.subheader("📍 PHƯƠNG ÁN ĐÓNG HÀNG")
-                
-                st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
-                
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Tổng CBM hàng", f"{total_cargo_cbm:.3f} m³")
-                c2.metric("Số kiện đã xếp", f"{len(selected_bin.items)} / {len(packer.items)}")
-                c3.metric("Hiệu suất lấp đầy", f"{(sum(float(i.get_dimension()[0])*float(i.get_dimension()[1])*float(i.get_dimension()[2]) for i in selected_bin.items)/(L*W*H))*100:.2f} %")
+            # --- 1. ĐƯA THÔNG SỐ LÊN TRÊN ---
+            st.divider()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Loại Container", c_choice)
+            c2.metric("Tổng CBM hàng", f"{total_cargo_cbm:.3f} m³")
+            c3.metric("Số kiện đã xếp", f"{len(selected_bin.items)} / {len(packer.items)}")
 
-                # SỬA LỖI NÚT IN
-                st.divider()
-                st.write("👉 *Xoay góc 3D ưng ý rồi nhấn nút:*")
-                
-                # Code JS để in cửa sổ cha của iframe
-                st.components.v1.html(
-                    """
-                    <script>
-                    function printPage() {
-                        window.parent.print();
-                    }
-                    </script>
-                    <button onclick="printPage()" style="
-                        background-color: #ff4b4b; 
-                        color: white; 
-                        padding: 15px 32px; 
-                        border: none; 
-                        border-radius: 8px; 
-                        width: 100%;
-                        font-weight: bold;
-                        cursor: pointer;
-                    ">
-                        🖨️ XUẤT FILE PDF / IN BÁO CÁO
-                    </button>
-                    """,
-                    height=100,
-                )
+            # --- 2. BIỂU ĐỒ 3D (Đã có Container trong Legend) ---
+            st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts, c_choice), use_container_width=True)
+
+            # --- 3. NÚT IN ---
+            st.components.v1.html(
+                """
+                <script>function printPage() { window.parent.print(); }</script>
+                <button onclick="printPage()" style="
+                    background-color: #ff4b4b; color: white; padding: 15px 32px; 
+                    border: none; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer;
+                ">
+                    🖨️ XUẤT FILE PDF / IN BÁO CÁO CHO KHO
+                </button>
+                """,
+                height=100,
+            )
+            
+            with st.expander("🔍 Chi tiết Packing List"):
+                st.dataframe(final_df, use_container_width=True, hide_index=True)
