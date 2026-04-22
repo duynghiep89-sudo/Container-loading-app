@@ -26,7 +26,7 @@ if 'sku_library' not in st.session_state:
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- HÀM VẼ 3D NÂNG CAO ---
+# --- HÀM VẼ 3D NÂNG CAO (GIỮ NGUYÊN LOGIC CŨ) ---
 def draw_3d_loading(bin_obj, sku_colors, sku_counts, container_type):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
@@ -42,8 +42,10 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts, container_type):
         x, y, z = [float(p) for p in item.position]
         w, h, d_item = [float(p) for p in item.get_dimension()]
         color = sku_colors.get(item.name, '#808080')
-        show_legend = item.name not in added_to_legend
-        if show_legend: added_to_legend.add(item.name)
+        if item.name not in added_to_legend:
+            added_to_legend.add(item.name)
+            show_legend = True
+        else: show_legend = False
 
         fig.add_trace(go.Mesh3d(
             x=[x, x, x+w, x+w, x, x, x+w, x+w], y=[y, y+h, y+h, y, y, y+h, y+h, y], z=[z, z, z, z, z+d_item, z+d_item, z+d_item, z+d_item],
@@ -83,54 +85,62 @@ with st.sidebar:
         L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
         st.success(f"📌 {c_choice}: {L}x{W}x{H} mm")
 
+# --- 3 TABS CHÍNH ---
 tab_calc, tab_library = st.tabs(["🚀 Tính toán đóng hàng", "📖 Danh mục SKU (Master Data)"])
 
 # --- TAB 2: QUẢN LÝ DANH MỤC SKU ---
 with tab_library:
     st.subheader("Quản lý thư viện thông số mặt hàng")
     col_lib1, col_lib2 = st.columns([1, 1])
+    
     with col_lib1:
-        st.write("1. Đổ dữ liệu từ file CSV")
+        st.write("1. Đổ dữ liệu từ file CSV (Dùng để nạp hàng loạt)")
         lib_file = st.file_uploader("Tải file danh mục SKU", type="csv", key="lib_csv")
         if lib_file:
             st.session_state.sku_library = pd.read_csv(lib_file)
-            st.success("Đã nạp danh mục!")
+            st.success("Đã nạp danh mục từ CSV!")
+
     with col_lib2:
-        st.write("2. Nhập tay hoặc chỉnh sửa")
+        st.write("2. Nhập tay hoặc chỉnh sửa danh mục")
         st.session_state.sku_library = st.data_editor(st.session_state.sku_library, num_rows="dynamic", key="lib_editor")
 
 # --- TAB 1: TÍNH TOÁN ĐÓNG HÀNG ---
 with tab_calc:
     st.subheader("Lập phương án đóng hàng")
-    # Lấy danh sách SKU từ danh mục để làm gợi ý chọn
-    sku_options = st.session_state.sku_library['SKU'].unique().tolist()
+    tab_csv, tab_manual = st.tabs(["📂 Tải Packing List", "✍️ Nhập tay (Tự động lấy thông số)"])
     
-    manual_entry = st.data_editor(
-        pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity']),
-        num_rows="dynamic", 
-        column_config={
-            # THÊM GỢI Ý SKU TỪ DANH MỤC
-            "SKU": st.column_config.SelectboxColumn("Mã hàng (SKU)", options=sku_options, required=True),
-            "Quantity": st.column_config.NumberColumn("Số lượng", default=1)
-        },
-        key="calc_editor"
-    )
-    
-    if not manual_entry.empty:
-        lib = st.session_state.sku_library
-        for i, row in manual_entry.iterrows():
-            if row['SKU'] in lib['SKU'].values:
-                sku_data = lib[lib['SKU'] == row['SKU']].iloc[0]
-                # Chỉ điền tự động nếu các ô đang trống hoặc bằng 0
-                if pd.isna(row['Width']) or row['Width'] == 0:
+    calc_df = pd.DataFrame()
+
+    with tab_csv:
+        uploaded_file = st.file_uploader("Kéo thả file CSV Packing List", type="csv")
+        if uploaded_file: calc_df = pd.read_csv(uploaded_file)
+
+    with tab_manual:
+        st.write("Gõ tên SKU để tự động lấy thông số từ Danh mục:")
+        # Tạo bảng nhập liệu thông minh
+        manual_entry = st.data_editor(
+            pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity']),
+            num_rows="dynamic", key="calc_editor"
+        )
+        
+        if not manual_entry.empty:
+            # Logic: Nếu SKU nhập vào có trong Thư viện, tự điền thông số
+            lib = st.session_state.sku_library
+            for i, row in manual_entry.iterrows():
+                if row['SKU'] in lib['SKU'].values:
+                    sku_data = lib[lib['SKU'] == row['SKU']].iloc[0]
                     manual_entry.at[i, 'Width'] = sku_data['Width']
                     manual_entry.at[i, 'Height'] = sku_data['Height']
                     manual_entry.at[i, 'Depth'] = sku_data['Depth']
                     manual_entry.at[i, 'Weight'] = sku_data['Weight']
+            
+            calc_df = pd.concat([calc_df, manual_entry.dropna(subset=['SKU'])], ignore_index=True)
 
-    if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        calc_df = manual_entry.dropna(subset=['SKU'])
-        if not calc_df.empty:
+    if not calc_df.empty:
+        st.write("Packing List sẽ tính toán:")
+        st.dataframe(calc_df, use_container_width=True)
+
+        if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
             total_cbm = sum((r['Width']/1000 * r['Height']/1000 * r['Depth']/1000 * r['Quantity']) for _, r in calc_df.iterrows())
             with st.spinner('🛠️ Đang xử lý...'):
                 packer = Packer()
@@ -147,6 +157,7 @@ with tab_calc:
                 st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cbm:.3f} m³")
                 st.plotly_chart(draw_3d_loading(packer.bins[0], sku_colors, sku_counts, c_choice), use_container_width=True)
                 
+                # Nút In
                 st.components.v1.html("""
                     <script>function printPage() { window.parent.print(); }</script>
                     <button onclick="printPage()" style="background-color: #ff4b4b; color: white; padding: 15px 32px; border: none; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer;">
