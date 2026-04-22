@@ -50,21 +50,16 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
 # --- GIAO DIỆN CHÍNH ---
 st.title("🚚 Loading Map - GESIN")
 
-# Danh mục kích thước tiêu chuẩn (Dài, Rộng, Cao, Tải trọng)
 cont_data = {
-    "40HC": [12032, 2352, 2698, 28000],
-    "40DC": [12032, 2352, 2393, 28000],
-    "20GP": [5898, 2352, 2393, 28000],
-    "45HC": [13556, 2352, 2698, 28000],
-    "40RF": [11590, 2290, 2250, 27000],
-    "20RF": [5450, 2290, 2260, 24000],
+    "40HC": [12032, 2352, 2698, 28000], "40DC": [12032, 2352, 2393, 28000],
+    "20GP": [5898, 2352, 2393, 28000], "45HC": [13556, 2352, 2698, 28000],
+    "40RF": [11590, 2290, 2250, 27000], "20RF": [5450, 2290, 2260, 24000],
     "Tùy chỉnh": [0, 0, 0, 0]
 }
 
 with st.sidebar:
-    st.header("⚙️ Cấu hình Phương tiện")
-    c_choice = st.selectbox("Chọn loại Container", list(cont_data.keys()))
-    
+    st.header("⚙️ Cấu hình")
+    c_choice = st.selectbox("Phương tiện", list(cont_data.keys()))
     if c_choice == "Tùy chỉnh":
         L = st.number_input("Dài (mm)", 6000)
         W = st.number_input("Rộng (mm)", 2300)
@@ -72,43 +67,40 @@ with st.sidebar:
         M = st.number_input("Tải trọng (kg)", 15000)
     else:
         specs = cont_data[c_choice]
-        # Hệ thống tự động trừ 20mm dung sai lọt lòng để an toàn khi đóng hàng thực tế
         L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-20, specs[3]
-        
-        # HIỂN THỊ THÔNG SỐ ĐỂ KIỂM TRA CHÉO (Yêu cầu mới của Duy Nghiệp)
-        st.success(f"📌 Thông số sử dụng cho {c_choice}:")
-        st.write(f"**Dài:** {L} mm")
-        st.write(f"**Rộng:** {W} mm")
-        st.write(f"**Cao:** {H} mm")
-        st.write(f"**Tải trọng:** {M:,} kg")
-        st.caption("*(Đã trừ 20mm dung sai lọt lòng)*")
+        st.success(f"📌 Thông số lọt lòng {c_choice}:")
+        st.write(f"Dài: {L}mm | Rộng: {W}mm | Cao: {H}mm")
     
     st.divider()
     template_df = pd.DataFrame({'SKU': ['TABLE_A', 'CHAIR_B'], 'Width': [800, 500], 'Height': [750, 900], 'Depth': [1200, 500], 'Weight': [40, 15], 'Quantity': [10, 20]})
-    st.download_button(label="📥 Tải file CSV mẫu", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
+    st.download_button(label="📥 Tải file mẫu CSV", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
 
 st.subheader("📋 Nhập liệu hàng hóa")
-uploaded_file = st.file_uploader("Chọn file CSV đã điền dữ liệu", type="csv")
+uploaded_file = st.file_uploader("Chọn file CSV", type="csv")
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
-    st.write("Bảng kiểm tra dữ liệu đầu vào:")
+    st.write("Kiểm tra dữ liệu:")
     st.table(df)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        # KIỂM TRA CBM (Dùng đơn vị Mét để chính xác tuyệt đối)
-        total_cargo_cbm = sum(((row['Width']/1000) * (row['Height']/1000) * (row['Depth']/1000) * row['Quantity']) for _, row in df.iterrows())
+        # --- CÁCH TÍNH CBM CHUẨN (ĐÃ SỬA TẠI ĐÂY) ---
+        total_cargo_cbm = 0
+        for _, row in df.iterrows():
+            # Đổi từng kích thước sang mét trước khi nhân để ra CBM chuẩn xác
+            item_cbm = (row['Width']/1000) * (row['Height']/1000) * (row['Depth']/1000) * row['Quantity']
+            total_cargo_cbm += item_cbm
+        
         vessel_cbm = (L/1000) * (W/1000) * (H/1000)
         
-        st.info(f"📊 Tổng CBM hàng hóa: **{total_cargo_cbm:.3f} m³** | Dung tích xe: **{vessel_cbm:.3f} m³**")
+        st.info(f"📊 Tổng hàng hóa: {total_cargo_cbm:.3f} m³ | Dung tích xe: {vessel_cbm:.3f} m³")
         
         if total_cargo_cbm > vessel_cbm:
-            st.error(f"❌ DỪNG TÍNH TOÁN: Hàng hóa ({total_cargo_cbm:.2f} m³) lớn hơn dung tích xe ({vessel_cbm:.2f} m³).")
+            st.error(f"❌ DỪNG LẠI: Tổng hàng ({total_cargo_cbm:.2f} m³) đã vượt quá dung tích xe ({vessel_cbm:.2f} m³).")
         else:
-            with st.spinner('🛠️ Đang tính toán sơ đồ...'):
+            with st.spinner('🛠️ Đang xử lý thuật toán xếp hàng...'):
                 df = df.sort_values(by='SKU')
                 sku_counts = df.groupby('SKU')['Quantity'].sum().to_dict()
-                
                 packer = Packer()
                 packer.add_bin(Bin(c_choice, L, W, H, M))
 
@@ -123,8 +115,8 @@ if uploaded_file:
                 selected_bin = packer.bins[0]
                 
                 if len(selected_bin.items) < len(packer.items):
-                    st.warning(f"⚠️ Cảnh báo: Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện.")
+                    st.warning(f"⚠️ Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện.")
                 else:
-                    st.success(f"✅ Đã xếp đủ toàn bộ hàng vào phương tiện!")
+                    st.success(f"✅ Đã xếp đủ {len(selected_bin.items)} kiện hàng!")
 
                 st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
