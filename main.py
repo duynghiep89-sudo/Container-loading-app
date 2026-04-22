@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
-# --- ĐOẠN 1: CSS ĐỂ CHỈ IN PHẦN KẾT QUẢ ---
+# --- CSS ĐỂ CHỈ IN PHẦN KẾT QUẢ ---
 st.markdown("""
     <style>
     @media print {
@@ -63,19 +63,18 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             x=[x, x+w, x+w, x, x, x, x+w, x+w, x, x, x, x, x+w, x+w, x+w, x+w],
             y=[y, y, y+h, y+h, y, y, y, y+h, y+h, y+h, y, y+h, y+h, y, y, y+h],
             z=[z, z, z, z, z, z+d_item, z+d_item, z+d_item, z+d_item, z, z+d_item, z+d_item, z+d_item, z+d_item, z, z],
-            mode='lines', line=dict(color='black', width=3), showlegend=False, hoverinfo='none'
+            mode='lines', line=dict(color='black', width=2), showlegend=False, hoverinfo='none'
         ))
 
     fig.update_layout(
         scene=dict(
-            xaxis=dict(title='Dài', range=[-100, L+100]),
-            yaxis=dict(title='Rộng', range=[-100, W+100]),
-            zaxis=dict(title='Cao', range=[-100, H+100]),
-            aspectmode='data',
-            camera=dict(eye=dict(x=1.8, y=1.8, z=1.2), center=dict(x=0.2, y=0, z=-0.3))
+            xaxis=dict(title='Dài (x)', range=[-100, L+100]),
+            yaxis=dict(title='Rộng (y)', range=[-100, W+100]),
+            zaxis=dict(title='Cao (z)', range=[-100, H+100]),
+            aspectmode='data'
         ),
-        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)", font=dict(size=16)),
-        margin=dict(l=0, r=0, b=0, t=30), height=800 
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)"),
+        margin=dict(l=0, r=0, b=0, t=30), height=700 
     )
     return fig
 
@@ -101,7 +100,7 @@ with st.sidebar:
         specs = cont_data[c_choice]
         L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
         st.success(f"📌 Thông số lọt lòng {c_choice}:")
-        st.write(f"Dài: {L}mm | Rộng: {W}mm | Cao: {H}mm")
+        st.write(f"Dài: {L} | Rộng: {W} | Cao: {H}")
 
     st.divider()
     st.header("🗂️ Danh mục SKU Hệ thống")
@@ -112,16 +111,14 @@ with st.sidebar:
     else:
         master_sku_df = pd.DataFrame({
             'SKU': ['SOFA_A', 'TABLE_B', 'CHAIR_C'], 
-            'Width': [850.0, 1000.0, 500.0], 
-            'Height': [900.0, 750.0, 1100.0], 
-            'Depth': [2100.0, 1600.0, 550.0], 
-            'Weight': [75.0, 45.0, 12.0]
+            'Width': [850, 1000, 500], 'Height': [900, 750, 1100], 
+            'Depth': [2100, 1600, 550], 'Weight': [75, 45, 12]
         })
     
     edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
     st.divider()
     template_df = pd.DataFrame({'SKU': ['SOFA_A'], 'Width': [850], 'Height': [900], 'Depth': [2100], 'Weight': [75], 'Quantity': [5]})
-    st.download_button(label="📥 Tải file mẫu CSV hàng hóa", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
+    st.download_button(label="📥 Tải file mẫu CSV", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
 
 # --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
@@ -136,76 +133,74 @@ with tab1:
 
 with tab2:
     sku_list = edited_master['SKU'].dropna().unique().tolist()
-    
     column_config = {
         "SKU": st.column_config.SelectboxColumn("Mã hàng (SKU)", options=sku_list, required=True),
-        "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d"),
-        "Height": st.column_config.NumberColumn("Cao (mm)", format="%d"),
-        "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)", format="%d"),
-        "Weight": st.column_config.NumberColumn("Nặng (kg)", format="%d"),
-        "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
+        "Width": st.column_config.NumberColumn("Rộng (mm)"),
+        "Height": st.column_config.NumberColumn("Cao (mm)"),
+        "Depth": st.column_config.NumberColumn("Dài (mm)"),
+        "Weight": st.column_config.NumberColumn("Nặng (kg)"),
+        "Quantity": st.column_config.NumberColumn("Số lượng", min_value=1, default=1)
     }
     
     if "manual_df" not in st.session_state:
         st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
 
-    # Editor nhập liệu
     manual_data = st.data_editor(st.session_state.manual_df, num_rows="dynamic", column_config=column_config, key="manual_input")
 
-    # --- LOGIC QUAN TRỌNG: XÓA CŨ - NẠP MỚI ---
-    if not manual_data.equals(st.session_state.manual_df):
-        needs_rerun = False
-        for index, row in manual_data.iterrows():
-            sku_val = row['SKU']
-            
-            # Nếu SKU được chọn và có trong danh mục Master
-            if pd.notna(sku_val) and sku_val in sku_list:
-                master_row = edited_master[edited_master['SKU'] == sku_val].iloc[0]
-                
-                # Kiểm tra nếu thông số hiện tại trên dòng khác với Master 
-                # (Chứng tỏ SKU vừa được thay đổi hoặc dòng mới được tạo)
-                if row['Width'] != master_row['Width'] or row['Height'] != master_row['Height'] or row['Depth'] != master_row['Depth']:
-                    # GHI ĐÈ TUYỆT ĐỐI (Xóa dữ liệu cũ của dòng đó bằng cách nạp dữ liệu mới)
-                    manual_data.at[index, 'Width'] = master_row['Width']
-                    manual_data.at[index, 'Height'] = master_row['Height']
-                    manual_data.at[index, 'Depth'] = master_row['Depth']
-                    manual_data.at[index, 'Weight'] = master_row['Weight']
-                    
-                    # Nếu chưa có số lượng thì mặc định là 1
-                    if pd.isna(row['Quantity']) or row['Quantity'] == 0:
-                        manual_data.at[index, 'Quantity'] = 1
-                    
-                    needs_rerun = True
-        
-        # Cập nhật lại session state sau khi xử lý
-        st.session_state.manual_df = manual_data
-        if needs_rerun:
-            st.rerun()
+    # --- LOGIC AUTO-FILL & XÓA CŨ (CẢI TIẾN) ---
+    needs_rerun = False
+    updated_manual = manual_data.copy()
 
-    if not manual_data.empty:
-        clean_manual = manual_data.dropna(subset=['SKU', 'Width', 'Height', 'Depth'])
+    for index, row in updated_manual.iterrows():
+        sku_val = row['SKU']
+        if pd.notna(sku_val) and sku_val in sku_list:
+            master_row = edited_master[edited_master['SKU'] == sku_val].iloc[0]
+            
+            # Nếu thông số trên dòng khác với Master (do đổi SKU hoặc mới thêm dòng)
+            if (row['Width'] != master_row['Width'] or 
+                row['Height'] != master_row['Height'] or 
+                row['Depth'] != master_row['Depth']):
+                
+                updated_manual.at[index, 'Width'] = master_row['Width']
+                updated_manual.at[index, 'Height'] = master_row['Height']
+                updated_manual.at[index, 'Depth'] = master_row['Depth']
+                updated_manual.at[index, 'Weight'] = master_row['Weight']
+                
+                if pd.isna(row['Quantity']) or row['Quantity'] == 0:
+                    updated_manual.at[index, 'Quantity'] = 1
+                needs_rerun = True
+
+    if needs_rerun:
+        st.session_state.manual_df = updated_manual
+        st.rerun()
+    else:
+        st.session_state.manual_df = manual_data
+
+    if not st.session_state.manual_df.empty:
+        clean_manual = st.session_state.manual_df.dropna(subset=['SKU', 'Width', 'Height', 'Depth'])
         if not clean_manual.empty:
             final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
 # --- XỬ LÝ TÍNH TOÁN ---
 if not final_df.empty:
     st.write("Dữ liệu tổng hợp để tính toán:")
-    st.dataframe(final_df, use_container_width=True)
+    # Loại bỏ các hàng trùng lặp hoặc NaN trong SKU để hiển thị sạch sẽ
+    final_display = final_df.dropna(subset=['SKU'])
+    st.dataframe(final_display, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        # Ép kiểu dữ liệu về float
+        # Ép kiểu dữ liệu chuẩn
         for col in ['Width', 'Height', 'Depth', 'Weight', 'Quantity']:
             final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
         
-        # Loại bỏ các dòng lỗi kích thước
-        final_df = final_df[(final_df['Width'] > 0) & (final_df['Height'] > 0) & (final_df['Depth'] > 0)]
+        final_df = final_df[final_df['Quantity'] > 0]
 
         if final_df.empty:
-            st.error("Dữ liệu hàng hóa không hợp lệ (kích thước phải lớn hơn 0).")
+            st.error("Dữ liệu hàng hóa không hợp lệ.")
         else:
             total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
             
-            with st.spinner('🛠️ Đang tính toán...'):
+            with st.spinner('🛠️ Đang tính toán sơ đồ đóng hàng...'):
                 packer = Packer()
                 packer.add_bin(Bin(c_choice, L, W, H, M))
                 
@@ -215,13 +210,15 @@ if not final_df.empty:
 
                 for _, row in final_df.iterrows():
                     for _ in range(int(row['Quantity'])):
-                        packer.add_item(Item(str(row['SKU']), float(row['Depth']), float(row['Width']), float(row['Height']), float(row['Weight'])))
+                        # py3dbp: Item(name, width, height, depth, weight)
+                        # Ở đây map: Width->Width, Height->Height, Depth->Depth
+                        packer.add_item(Item(str(row['SKU']), float(row['Width']), float(row['Height']), float(row['Depth']), float(row['Weight'])))
                 
                 try:
                     packer.pack()
                     selected_bin = packer.bins[0]
                     
-                    st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cargo_cbm:.3f} m³")
+                    st.success(f"📊 Container: {c_choice} | Tổng thể tích hàng: {total_cargo_cbm:.3f} m³")
                     st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
 
                     st.components.v1.html(
@@ -236,5 +233,9 @@ if not final_df.empty:
                         """,
                         height=100,
                     )
+                    
+                    # Thống kê hàng không đóng được (nếu có)
+                    if len(selected_bin.unfitted_items) > 0:
+                        st.warning(f"⚠️ Có {len(selected_bin.unfitted_items)} kiện hàng không vừa container!")
                 except Exception as e:
-                    st.error(f"Lỗi trong quá trình tính toán: {e}")
+                    st.error(f"Lỗi tính toán: {e}")
