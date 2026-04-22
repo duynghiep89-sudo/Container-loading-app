@@ -149,28 +149,40 @@ with tab2:
     if "manual_df" not in st.session_state:
         st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
 
+    # Editor nhập liệu
     manual_data = st.data_editor(st.session_state.manual_df, num_rows="dynamic", column_config=column_config, key="manual_input")
 
-    # Kiểm tra thay đổi để Auto-fill
+    # --- LOGIC QUAN TRỌNG: XÓA CŨ - NẠP MỚI ---
     if not manual_data.equals(st.session_state.manual_df):
         needs_rerun = False
         for index, row in manual_data.iterrows():
-            # Nếu có SKU nhưng các thông số khác đang trống (NaN) thì điền từ Master
-            if pd.notna(row['SKU']) and row['SKU'] in sku_list:
-                if pd.isna(row['Width']) or row['Width'] == 0:
-                    master_row = edited_master[edited_master['SKU'] == row['SKU']].iloc[0]
+            sku_val = row['SKU']
+            
+            # Nếu SKU được chọn và có trong danh mục Master
+            if pd.notna(sku_val) and sku_val in sku_list:
+                master_row = edited_master[edited_master['SKU'] == sku_val].iloc[0]
+                
+                # Kiểm tra nếu thông số hiện tại trên dòng khác với Master 
+                # (Chứng tỏ SKU vừa được thay đổi hoặc dòng mới được tạo)
+                if row['Width'] != master_row['Width'] or row['Height'] != master_row['Height'] or row['Depth'] != master_row['Depth']:
+                    # GHI ĐÈ TUYỆT ĐỐI (Xóa dữ liệu cũ của dòng đó bằng cách nạp dữ liệu mới)
                     manual_data.at[index, 'Width'] = master_row['Width']
                     manual_data.at[index, 'Height'] = master_row['Height']
                     manual_data.at[index, 'Depth'] = master_row['Depth']
                     manual_data.at[index, 'Weight'] = master_row['Weight']
+                    
+                    # Nếu chưa có số lượng thì mặc định là 1
+                    if pd.isna(row['Quantity']) or row['Quantity'] == 0:
+                        manual_data.at[index, 'Quantity'] = 1
+                    
                     needs_rerun = True
         
+        # Cập nhật lại session state sau khi xử lý
         st.session_state.manual_df = manual_data
         if needs_rerun:
             st.rerun()
 
     if not manual_data.empty:
-        # Loại bỏ các dòng chưa nhập SKU hoặc thiếu kích thước quan trọng
         clean_manual = manual_data.dropna(subset=['SKU', 'Width', 'Height', 'Depth'])
         if not clean_manual.empty:
             final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
@@ -181,11 +193,11 @@ if not final_df.empty:
     st.dataframe(final_df, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        # Ép kiểu dữ liệu về float để tránh lỗi py3dbp
+        # Ép kiểu dữ liệu về float
         for col in ['Width', 'Height', 'Depth', 'Weight', 'Quantity']:
             final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
         
-        # Loại bỏ các dòng có kích thước = 0 để tránh lỗi thuật toán
+        # Loại bỏ các dòng lỗi kích thước
         final_df = final_df[(final_df['Width'] > 0) & (final_df['Height'] > 0) & (final_df['Depth'] > 0)]
 
         if final_df.empty:
