@@ -26,7 +26,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- HÀM HỖ TRỢ (GIỮ NGUYÊN) ---
+# --- HÀM HỖ TRỢ ---
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
@@ -72,23 +72,22 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             yaxis=dict(title='Rộng', range=[-100, W+100]),
             zaxis=dict(title='Cao', range=[-100, H+100]),
             aspectmode='data',
-            camera=dict(eye=dict(x=1.8, y=1.8, z=1.2), center=dict(x=0.2, y=0, z=-0.3))
+            # Đã chỉnh sửa: dịch center y sang -0.2 để lệch về bên trái người dùng
+            camera=dict(eye=dict(x=1.8, y=1.8, z=1.2), center=dict(x=0.2, y=-0.2, z=-0.3))
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)", font=dict(size=16)),
         margin=dict(l=0, r=0, b=0, t=30), height=800 
     )
     return fig
 
-# --- QUẢN LÝ DỮ LIỆU (PHẦN FIX YÊU CẦU) ---
+# --- QUẢN LÝ DỮ LIỆU (FIX PHẦN TAB 2) ---
 if "manual_df" not in st.session_state:
     st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
 
 def on_manual_change():
-    """Hàm xử lý tự động điền dữ liệu Master vào tất cả các dòng khi thay đổi"""
     state = st.session_state.manual_input
     df = st.session_state.manual_df
     
-    # Xử lý cập nhật thông số khi chọn SKU (Edited Rows)
     for index_str, changes in state.get("edited_rows", {}).items():
         idx = int(index_str)
         if "SKU" in changes:
@@ -105,7 +104,6 @@ def on_manual_change():
             for col, val in changes.items():
                 df.at[idx, col] = val
 
-    # Xử lý thêm dòng mới (Added Rows)
     for row_data in state.get("added_rows", {}):
         new_row = {'SKU': None, 'Width': 0, 'Height': 0, 'Depth': 0, 'Weight': 0, 'Quantity': 1}
         if "SKU" in row_data:
@@ -119,11 +117,10 @@ def on_manual_change():
                 })
         st.session_state.manual_df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
-    # Xử lý xóa dòng
     if state.get("deleted_rows"):
         st.session_state.manual_df = df.drop(state["deleted_rows"]).reset_index(drop=True)
 
-# --- GIAO DIỆN CHÍNH (GIỮ NGUYÊN) ---
+# --- GIAO DIỆN CHÍNH ---
 st.title("🚚 Loading Map - GESIN")
 
 cont_data = {
@@ -152,7 +149,7 @@ with st.sidebar:
     
     edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
 
-# --- PHẦN NHẬP DỮ LIỆU (FIX PHẦN TAB 2) ---
+# --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
 tab1, tab2 = st.tabs(["📂 Tải file CSV", "✍️ Nhập tay trực tiếp"])
 
@@ -173,7 +170,6 @@ with tab2:
         "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
     }
     
-    # Dùng on_change để đảm bảo dữ liệu cập nhật ngay lập tức cho mọi dòng
     st.data_editor(
         st.session_state.manual_df,
         num_rows="dynamic",
@@ -186,7 +182,7 @@ with tab2:
         clean_manual = st.session_state.manual_df.dropna(subset=['SKU', 'Width'])
         final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
-# --- XỬ LÝ TÍNH TOÁN (GIỮ NGUYÊN) ---
+# --- XỬ LÝ TÍNH TOÁN ---
 if not final_df.empty:
     st.write("Dữ liệu tổng hợp để tính toán:")
     st.dataframe(final_df, use_container_width=True)
