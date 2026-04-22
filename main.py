@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from py3dbp import Packer, Bin, Item
 import plotly.graph_objects as go
-import io
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
@@ -37,7 +36,7 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             i=[7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2], j=[3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3], k=[0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6],
             color=color, opacity=1, flatshading=True, name=f"{item.name} ({sku_counts.get(item.name)} kiện)", showlegend=show_in_legend
         ))
-        # Viền đen
+        # Viền đen sắc nét
         fig.add_trace(go.Scatter3d(
             x=[x, x+w, x+w, x, x, x, x+w, x+w, x, x, x, x, x+w, x+w, x+w, x+w],
             y=[y, y, y+h, y+h, y, y, y, y+h, y+h, y+h, y, y+h, y+h, y, y, y+h],
@@ -51,28 +50,45 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
 # --- GIAO DIỆN CHÍNH ---
 st.title("🚚 Loading Map - GESIN")
 
+# Danh mục kích thước tiêu chuẩn (Dài, Rộng, Cao, Tải trọng)
 cont_data = {
-    "40HC": [12032, 2352, 2698, 28000], "40DC": [12032, 2352, 2393, 28000],
-    "20GP": [5898, 2352, 2393, 28000], "45HC": [13556, 2352, 2698, 28000],
-    "40RF": [11590, 2290, 2250, 27000], "20RF": [5450, 2290, 2260, 24000],
+    "40HC": [12032, 2352, 2698, 28000],
+    "40DC": [12032, 2352, 2393, 28000],
+    "20GP": [5898, 2352, 2393, 28000],
+    "45HC": [13556, 2352, 2698, 28000],
+    "40RF": [11590, 2290, 2250, 27000],
+    "20RF": [5450, 2290, 2260, 24000],
     "Tùy chỉnh": [0, 0, 0, 0]
 }
 
 with st.sidebar:
-    st.header("⚙️ Cấu hình")
-    c_choice = st.selectbox("Phương tiện", list(cont_data.keys()))
+    st.header("⚙️ Cấu hình Phương tiện")
+    c_choice = st.selectbox("Chọn loại Container", list(cont_data.keys()))
+    
     if c_choice == "Tùy chỉnh":
-        L, W, H, M = st.number_input("Dài", 6000), st.number_input("Rộng", 2300), st.number_input("Cao", 2300), st.number_input("Tải trọng", 15000)
+        L = st.number_input("Dài (mm)", 6000)
+        W = st.number_input("Rộng (mm)", 2300)
+        H = st.number_input("Cao (mm)", 2300)
+        M = st.number_input("Tải trọng (kg)", 15000)
     else:
         specs = cont_data[c_choice]
+        # Hệ thống tự động trừ 20mm dung sai lọt lòng để an toàn khi đóng hàng thực tế
         L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-20, specs[3]
+        
+        # HIỂN THỊ THÔNG SỐ ĐỂ KIỂM TRA CHÉO (Yêu cầu mới của Duy Nghiệp)
+        st.success(f"📌 Thông số sử dụng cho {c_choice}:")
+        st.write(f"**Dài:** {L} mm")
+        st.write(f"**Rộng:** {W} mm")
+        st.write(f"**Cao:** {H} mm")
+        st.write(f"**Tải trọng:** {M:,} kg")
+        st.caption("*(Đã trừ 20mm dung sai lọt lòng)*")
     
-    # Nút tải file mẫu
+    st.divider()
     template_df = pd.DataFrame({'SKU': ['TABLE_A', 'CHAIR_B'], 'Width': [800, 500], 'Height': [750, 900], 'Depth': [1200, 500], 'Weight': [40, 15], 'Quantity': [10, 20]})
     st.download_button(label="📥 Tải file CSV mẫu", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
 
 st.subheader("📋 Nhập liệu hàng hóa")
-uploaded_file = st.file_uploader("Chọn file CSV", type="csv")
+uploaded_file = st.file_uploader("Chọn file CSV đã điền dữ liệu", type="csv")
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
@@ -80,19 +96,19 @@ if uploaded_file:
     st.table(df)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        # 5. KIỂM TRA TỔNG CBM TRƯỚC KHI CHẠY
-        total_cargo_cbm = sum((row['Width'] * row['Height'] * row['Depth'] * row['Quantity']) / 1e9 for _, row in df.iterrows())
-        vessel_cbm = (L * W * H) / 1e9
+        # KIỂM TRA CBM (Dùng đơn vị Mét để chính xác tuyệt đối)
+        total_cargo_cbm = sum(((row['Width']/1000) * (row['Height']/1000) * (row['Depth']/1000) * row['Quantity']) for _, row in df.iterrows())
+        vessel_cbm = (L/1000) * (W/1000) * (H/1000)
         
-        st.info(f"Tổng CBM hàng hóa: {total_cargo_cbm:.2f} m³ | Dung tích phương tiện: {vessel_cbm:.2f} m³")
+        st.info(f"📊 Tổng CBM hàng hóa: **{total_cargo_cbm:.3f} m³** | Dung tích xe: **{vessel_cbm:.3f} m³**")
         
         if total_cargo_cbm > vessel_cbm:
-            st.error(f"❌ DỪNG TÍNH TOÁN: Tổng hàng hóa ({total_cargo_cbm:.2f} m³) đã vượt quá dung tích tối đa ({vessel_cbm:.2f} m³). Vui lòng bớt hàng!")
+            st.error(f"❌ DỪNG TÍNH TOÁN: Hàng hóa ({total_cargo_cbm:.2f} m³) lớn hơn dung tích xe ({vessel_cbm:.2f} m³).")
         else:
-            # 3. THÔNG BÁO ĐANG CHẠY
-            with st.spinner('🛠️ Đang xử lý thuật toán xếp hàng... Vui lòng đợi trong giây lát!'):
+            with st.spinner('🛠️ Đang tính toán sơ đồ...'):
                 df = df.sort_values(by='SKU')
-                sku_counts = df.set_index('SKU')['Quantity'].to_dict()
+                sku_counts = df.groupby('SKU')['Quantity'].sum().to_dict()
+                
                 packer = Packer()
                 packer.add_bin(Bin(c_choice, L, W, H, M))
 
@@ -106,15 +122,9 @@ if uploaded_file:
                 packer.pack()
                 selected_bin = packer.bins[0]
                 
-                # 4. THÔNG BÁO NẾU KHÔNG XẾP ĐỦ
-                total_items = len(packer.items)
-                packed_items = len(selected_bin.items)
-                
-                if packed_items < total_items:
-                    st.warning(f"⚠️ CẢNH BÁO: Không thể xếp hết toàn bộ hàng! (Đã xếp {packed_items}/{total_items} kiện).")
+                if len(selected_bin.items) < len(packer.items):
+                    st.warning(f"⚠️ Cảnh báo: Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện.")
                 else:
-                    st.success(f"✅ Tuyệt vời! Toàn bộ {packed_items} kiện đã được xếp gọn gàng.")
+                    st.success(f"✅ Đã xếp đủ toàn bộ hàng vào phương tiện!")
 
-                vol_used = sum(float(i.get_dimension()[0])*float(i.get_dimension()[1])*float(i.get_dimension()[2]) for i in selected_bin.items)
-                st.metric("Hiệu suất lấp đầy thực tế", f"{(vol_used/(L*W*H))*100:.2f} %")
                 st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
