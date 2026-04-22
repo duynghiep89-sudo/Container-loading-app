@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
-# --- ĐOẠN 1: CSS ĐỂ CHỈ IN PHẦN KẾT QUẢ (MỚI BỔ SUNG) ---
+# --- ĐOẠN 1: CSS ĐỂ CHỈ IN PHẦN KẾT QUẢ ---
 st.markdown("""
     <style>
     @media print {
@@ -19,7 +19,6 @@ st.markdown("""
         div.stDataFrame {
             display: none !important;
         }
-        /* Chỉ hiển thị biểu đồ 3D và thông tin quan trọng */
         .main .block-container {
             padding-top: 1rem !important;
         }
@@ -27,19 +26,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- HÀM TẠO FILE CSV MẪU ---
+# --- HÀM HỖ TRỢ ---
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- HÀM VẼ 3D NÂNG CAO ---
 def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
 
-    # 1. Sàn gỗ
+    # 1. Sàn gỗ & Tường
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0], color='#8B4513', opacity=1, showlegend=False))
-    
-    # 2. Tường thép
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, 0, 0], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[W, W, W, W], z=[0, 0, H, H], color='gray', opacity=0.1, showlegend=False))
     fig.add_trace(go.Mesh3d(x=[0, 0, 0, 0], y=[0, W, W, 0], z=[0, 0, H, H], color='gray', opacity=0.2, showlegend=False))
@@ -76,14 +72,10 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             yaxis=dict(title='Rộng', range=[-100, W+100]),
             zaxis=dict(title='Cao', range=[-100, H+100]),
             aspectmode='data',
-            camera=dict(
-                eye=dict(x=1.8, y=1.8, z=1.2),
-                center=dict(x=0.2, y=0, z=-0.3)
-            )
+            camera=dict(eye=dict(x=1.8, y=1.8, z=1.2), center=dict(x=0.2, y=0, z=-0.3))
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)", font=dict(size=16)),
-        margin=dict(l=0, r=0, b=0, t=30),
-        height=800 
+        margin=dict(l=0, r=0, b=0, t=30), height=800 
     )
     return fig
 
@@ -109,11 +101,30 @@ with st.sidebar:
         specs = cont_data[c_choice]
         L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
         st.success(f"📌 Thông số lọt lòng {c_choice}:")
-        st.write(f"Dài: {L}mm | Rộng: {W}mm | Cao: {H}mm (Trừ 3cm trần)")
+        st.write(f"Dài: {L}mm | Rộng: {W}mm | Cao: {H}mm")
 
     st.divider()
-    template_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850, 1000], 'Height': [900, 750], 'Depth': [2100, 1600], 'Weight': [75, 45], 'Quantity': [5, 10]})
-    st.download_button(label="📥 Tải file mẫu CSV", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
+    st.header("🗂️ Danh mục SKU Hệ thống")
+    # Cho phép nhập danh mục hoặc tải lên
+    master_file = st.file_uploader("Tải danh mục SKU (CSV)", type="csv")
+    if master_file:
+        master_sku_df = pd.read_csv(master_file)
+    else:
+        # Danh mục mặc định nếu không có file
+        master_sku_df = pd.DataFrame({
+            'SKU': ['SOFA_A', 'TABLE_B', 'CHAIR_C'], 
+            'Width': [850, 1000, 500], 
+            'Height': [900, 750, 1100], 
+            'Depth': [2100, 1600, 550], 
+            'Weight': [75, 45, 12]
+        })
+    
+    st.write("Chỉnh sửa danh mục tại đây:")
+    edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
+    
+    st.divider()
+    template_df = pd.DataFrame({'SKU': ['SOFA_A'], 'Width': [850], 'Height': [900], 'Depth': [2100], 'Weight': [75], 'Quantity': [5]})
+    st.download_button(label="📥 Tải file mẫu CSV hàng hóa", data=convert_df_to_csv(template_df), file_name='template_gesin.csv', mime='text/csv')
 
 # --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
@@ -122,31 +133,58 @@ tab1, tab2 = st.tabs(["📂 Tải file CSV", "✍️ Nhập tay trực tiếp"])
 final_df = pd.DataFrame()
 
 with tab1:
-    uploaded_file = st.file_uploader("Kéo thả file CSV", type="csv")
+    uploaded_file = st.file_uploader("Kéo thả file CSV đơn hàng", type="csv")
     if uploaded_file:
         final_df = pd.read_csv(uploaded_file)
 
 with tab2:
+    # Lấy danh sách SKU từ danh mục để làm dropdown
+    sku_list = edited_master['SKU'].unique().tolist()
+    
     column_config = {
-        "SKU": st.column_config.TextColumn("Mã hàng (SKU)", help="Nhập mã hàng không dấu", required=True),
-        "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d", min_value=1),
-        "Height": st.column_config.NumberColumn("Cao (mm)", format="%d", min_value=1),
-        "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)", format="%d", min_value=1),
-        "Weight": st.column_config.NumberColumn("Nặng (kg)", format="%d", min_value=0),
+        "SKU": st.column_config.SelectboxColumn("Mã hàng (SKU)", options=sku_list, help="Chọn mã từ danh mục", required=True),
+        "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d"),
+        "Height": st.column_config.NumberColumn("Cao (mm)", format="%d"),
+        "Depth": st.column_config.NumberColumn("Dài/Sâu (mm)", format="%d"),
+        "Weight": st.column_config.NumberColumn("Nặng (kg)", format="%d"),
         "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
     }
-    manual_data = st.data_editor(pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity']), num_rows="dynamic", column_config=column_config, key="manual_input")
+    
+    # Tạo dataframe trống để người dùng nhập
+    if "manual_df" not in st.session_state:
+        st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
+
+    manual_data = st.data_editor(
+        st.session_state.manual_df, 
+        num_rows="dynamic", 
+        column_config=column_config, 
+        key="manual_input"
+    )
+
+    # Xử lý tự động điền thông số khi SKU được chọn
+    if not manual_data.equals(st.session_state.manual_df):
+        # Duyệt qua các dòng để kiểm tra dòng nào mới chọn SKU nhưng chưa có thông số
+        for index, row in manual_data.iterrows():
+            if row['SKU'] in sku_list and pd.isna(row['Width']):
+                master_row = edited_master[edited_master['SKU'] == row['SKU']].iloc[0]
+                manual_data.at[index, 'Width'] = master_row['Width']
+                manual_data.at[index, 'Height'] = master_row['Height']
+                manual_data.at[index, 'Depth'] = master_row['Depth']
+                manual_data.at[index, 'Weight'] = master_row['Weight']
+        st.session_state.manual_df = manual_data
+        st.rerun()
+
     if not manual_data.empty and manual_data.dropna(subset=['SKU']).shape[0] > 0:
         clean_manual = manual_data.dropna(subset=['SKU'])
         final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
+# --- XỬ LÝ TÍNH TOÁN ---
 if not final_df.empty:
     st.write("Dữ liệu tổng hợp để tính toán:")
     st.dataframe(final_df, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
         total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
-        vessel_cbm = (L/1000 * W/1000 * H/1000)
         
         with st.spinner('🛠️ Đang tính toán...'):
             final_df = final_df.sort_values(by='SKU')
@@ -158,15 +196,15 @@ if not final_df.empty:
 
             for _, row in final_df.iterrows():
                 for _ in range(int(row['Quantity'])):
+                    # Lưu ý: py3dbp dùng Width, Height, Depth theo thứ tự trục
                     packer.add_item(Item(row['SKU'], row['Depth'], row['Width'], row['Height'], row['Weight']))
+            
             packer.pack()
             selected_bin = packer.bins[0]
             
-            # HIỂN THỊ KẾT QUẢ
             st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cargo_cbm:.3f} m³")
             st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
 
-            # --- ĐOẠN 2: NÚT IN THÔNG MINH (MỚI BỔ SUNG) ---
             st.components.v1.html(
                 """
                 <script>function printPage() { window.parent.print(); }</script>
