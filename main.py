@@ -3,14 +3,14 @@ import pandas as pd
 from py3dbp import Packer, Bin, Item
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Gesin Container Optimizer", layout="wide")
+st.set_page_config(page_title="Gesin Container Loading Optimizer", layout="wide")
 
 # --- HÀM VẼ 3D ---
-def draw_3d_loading(bin_obj, sku_colors):
+def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
 
-    # 1. VẼ SÀN CONTAINER
+    # 1. VẼ SÀN CONTAINER (Màu nâu gỗ)
     fig.add_trace(go.Mesh3d(
         x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0],
         color='#8B4513', opacity=1, name='Sàn gỗ', showlegend=False
@@ -33,13 +33,16 @@ def draw_3d_loading(bin_obj, sku_colors):
             show_in_legend = True
             added_to_legend.add(item.name)
 
+        # Ghi tên SKU kèm số lượng vào bảng chú thích
+        legend_name = f"{item.name} ({sku_counts.get(item.name, 0)} kiện)"
+
         fig.add_trace(go.Mesh3d(
             x=[x, x, x+w, x+w, x, x, x+w, x+w],
             y=[y, y+h, y+h, y, y, y+h, y+h, y],
             z=[z, z, z, z, z+d, z+d, z+d, z+d],
             i=[7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2], j=[3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3], k=[0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6],
             color=color, opacity=1, flatshading=True,
-            name=item.name, showlegend=show_in_legend
+            name=legend_name, showlegend=show_in_legend
         ))
         
         # Đường viền sắc nét
@@ -57,35 +60,63 @@ def draw_3d_loading(bin_obj, sku_colors):
     )
     return fig
 
-# --- GIAO DIỆN ---
-st.title("🚢 Tối ưu hóa đóng hàng theo SKU - Gesin")
+# --- GIAO DIỆN CHÍNH ---
+st.title("🚢 Hệ thống Đóng hàng Gesin Pro")
+
+# 1. DANH MỤC CONTAINER TIÊU CHUẨN
+cont_data = {
+    "40HC": [12032, 2352, 2698, 28000],
+    "40DC": [12032, 2352, 2393, 28000],
+    "20GP": [5898, 2352, 2393, 28000],
+    "45HC": [13556, 2352, 2698, 28000],
+    "40RF (Lạnh)": [11590, 2290, 2250, 27000],
+    "20RF (Lạnh)": [5450, 2290, 2260, 24000],
+    "Tùy chỉnh (Nhập tay)": [0, 0, 0, 0]
+}
 
 with st.sidebar:
-    st.header("Cài đặt")
-    c_type = st.selectbox("Container", ["40HC", "20DC"])
-    L, W, H, M = (12012, 2332, 2678, 28000) if c_type == "40HC" else (5878, 2332, 2373, 28000)
+    st.header("🚛 Cấu hình Phương tiện")
+    c_choice = st.selectbox("Loại Container / Xe", list(cont_data.keys()))
+    
+    if c_choice == "Tùy chỉnh (Nhập tay)":
+        L = st.number_input("Dài (mm)", value=6000)
+        W = st.number_input("Rộng (mm)", value=2300)
+        H = st.number_input("Cao (mm)", value=2300)
+        M = st.number_input("Tải trọng (kg)", value=15000)
+    else:
+        # Tự động lấy từ danh mục và trừ đi 20mm dung sai thực tế
+        specs = cont_data[c_choice]
+        L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-20, specs[3]
+        st.write(f"Kích thước lọt lòng: {L}x{W}x{H} (mm)")
+        st.write(f"Tải trọng: {M} kg")
 
-uploaded_file = st.file_uploader("Nạp file CSV", type="csv")
+# 2. NHẬP LIỆU & KIỂM TRA
+st.subheader("📋 Nhập danh sách hàng hóa")
+uploaded_file = st.file_uploader("Tải file CSV lên", type="csv")
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
     
-    if st.button("🚀 BẮT ĐẦU XẾP HÀNG"):
-        packer = Packer()
-        packer.add_bin(Bin(c_type, L, W, H, M))
+    # Hiển thị bảng kết quả nhập liệu để kiểm tra (Yêu cầu 4)
+    st.write("Dữ liệu đã nạp:")
+    st.table(df) # Sử dụng st.table để nhìn rõ hơn hoặc st.dataframe
 
-        # --- LOGIC GOM NHÓM SKU ---
-        # Sắp xếp DataFrame theo SKU để đảm bảo nạp hết SKU này rồi mới đến SKU kia
+    if st.button("🚀 Xếp hàng & Mô phỏng"):
+        # Gom nhóm SKU
         df = df.sort_values(by='SKU')
-
-        # Gán màu cố định cho từng SKU
-        palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf', '#E15F99', '#222A2A']
         sku_list = df['SKU'].unique().tolist()
+        
+        # Đếm số kiện từng SKU (Yêu cầu 3)
+        sku_counts = df.set_index('SKU')['Quantity'].to_dict()
+
+        packer = Packer()
+        packer.add_bin(Bin(c_choice, L, W, H, M))
+
+        palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf', '#E15F99', '#222A2A']
         sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(sku_list)}
 
         for _, row in df.iterrows():
             for _ in range(int(row['Quantity'])):
-                # Thư viện py3dbp nhận tham số theo thứ tự: Name, L, W, H, Weight
                 packer.add_item(Item(row['SKU'], row['Depth'], row['Width'], row['Height'], row['Weight']))
 
         packer.pack()
@@ -95,5 +126,7 @@ if uploaded_file:
         vol_total = L * W * H
         vol_used = sum(float(i.get_dimension()[0])*float(i.get_dimension()[1])*float(i.get_dimension()[2]) for i in selected_bin.items)
         
-        st.success(f"Lấp đầy: {(vol_used/vol_total)*100:.2f}% | Kiện đã xếp: {len(selected_bin.items)}/{len(packer.items)}")
-        st.plotly_chart(draw_3d_loading(selected_bin, sku_colors), use_container_width=True)
+        st.success(f"Hiệu suất lấp đầy: {(vol_used/vol_total)*100:.2f}% | Đã xếp: {len(selected_bin.items)} kiện")
+        
+        # 3. MÔ PHỎNG VỚI CHÚ THÍCH CÓ SỐ KIỆN
+        st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
