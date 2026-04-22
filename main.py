@@ -51,7 +51,8 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     fig.update_layout(
         scene=dict(xaxis_title='Dài', yaxis_title='Rộng', zaxis_title='Cao', aspectmode='data'),
         legend=dict(orientation="v", yanchor="bottom", y=0.01, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)"),
-        margin=dict(l=0, r=0, b=0, t=30)
+        margin=dict(l=0, r=0, b=0, t=30),
+        height=800  # ĐÃ CẬP NHẬT: Kéo dài khung hình 3D xuống dưới
     )
     return fig
 
@@ -96,7 +97,6 @@ with tab1:
 
 with tab2:
     st.write("Nhập thông số kiện hàng lẻ (Lưu ý đơn vị mm và kg):")
-    # Định nghĩa cấu hình cột để hiển thị đơn vị (Yêu cầu mới)
     column_config = {
         "SKU": st.column_config.TextColumn("Mã hàng (SKU)", help="Nhập mã hàng không dấu", required=True),
         "Width": st.column_config.NumberColumn("Rộng (mm)", format="%d", min_value=1),
@@ -122,11 +122,9 @@ with tab2:
 
 if not final_df.empty:
     st.write("Dữ liệu tổng hợp để tính toán:")
-    # Đồng bộ lại tên cột để hiển thị đẹp
     st.dataframe(final_df, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        # TÍNH CBM
         total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
         vessel_cbm = (L/1000 * W/1000 * H/1000)
         st.info(f"📊 Tổng hàng: {total_cargo_cbm:.3f} m³ | Dung tích xe: {vessel_cbm:.3f} m³")
@@ -150,7 +148,7 @@ if not final_df.empty:
                 selected_bin = packer.bins[0]
                 
                 if len(selected_bin.items) < len(packer.items):
-                    st.warning(f"⚠️ Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện. Kiểm tra lại kích thước kiện hàng so với cửa container!")
+                    st.warning(f"⚠️ Chỉ xếp được {len(selected_bin.items)}/{len(packer.items)} kiện.")
                 else:
                     st.success(f"✅ Đã xếp đủ toàn bộ kiện hàng!")
 
