@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from py3dbp import Packer, Bin, Item
 import plotly.graph_objects as go
-import os  # Bổ sung thư viện để kiểm tra đường dẫn file
+import os
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
@@ -84,16 +84,19 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
 if "manual_df" not in st.session_state:
     st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
 
-# --- MỚI: TỰ ĐỘNG ĐỔ DỮ LIỆU SKU TỪ ĐƯỜNG DẪN CỐ ĐỊNH ---
-if "auto_master_df" not in st.session_state:
+# --- MỚI & QUAN TRỌNG: NẠP DỮ LIỆU SKU LẦN ĐẦU TỪ FILE HỆ THỐNG ---
+if "master_data_init" not in st.session_state:
     default_path = r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
+    # Dữ liệu mặc định nếu file lỗi/không có
+    fallback_data = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
+    
     try:
         if os.path.exists(default_path):
-            st.session_state.auto_master_df = pd.read_csv(default_path)
+            st.session_state.master_data_init = pd.read_csv(default_path)
         else:
-            st.session_state.auto_master_df = None
+            st.session_state.master_data_init = fallback_data
     except Exception:
-        st.session_state.auto_master_df = None
+        st.session_state.master_data_init = fallback_data
 
 def on_manual_change():
     state = st.session_state.manual_input
@@ -156,15 +159,14 @@ with st.sidebar:
     st.header("🗂️ Danh mục SKU Hệ thống")
     master_file = st.file_uploader("Tải danh mục SKU mới (CSV)", type="csv")
     
-    # Ưu tiên: 1. File Upload -> 2. File G:\... (nếu có) -> 3. Dữ liệu mẫu
-    if master_file: 
-        master_sku_df = pd.read_csv(master_file)
-    elif st.session_state.auto_master_df is not None:
-        master_sku_df = st.session_state.auto_master_df
-    else: 
-        master_sku_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
-    
-    edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
+    # Xử lý logic hiển thị data_editor
+    if master_file:
+        current_master_df = pd.read_csv(master_file)
+    else:
+        current_master_df = st.session_state.master_data_init
+
+    # Gán dữ liệu vào editor
+    edited_master = st.data_editor(current_master_df, num_rows="dynamic", key="master_editor")
 
 # --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
