@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from py3dbp import Packer, Bin, Item
 import plotly.graph_objects as go
+import os  # Bổ sung thư viện để kiểm tra đường dẫn file
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
@@ -72,7 +73,6 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
             yaxis=dict(title='Rộng', range=[-100, W+100]),
             zaxis=dict(title='Cao', range=[-100, H+100]),
             aspectmode='data',
-            # Đã chỉnh sửa: dịch center y sang -0.2 để lệch về bên trái người dùng
             camera=dict(eye=dict(x=1.8, y=1.8, z=1.2), center=dict(x=0.2, y=-0.2, z=-0.3))
         ),
         legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)", font=dict(size=16)),
@@ -80,9 +80,20 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     )
     return fig
 
-# --- QUẢN LÝ DỮ LIỆU (FIX PHẦN TAB 2) ---
+# --- QUẢN LÝ DỮ LIỆU ---
 if "manual_df" not in st.session_state:
     st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
+
+# --- MỚI: TỰ ĐỘNG ĐỔ DỮ LIỆU SKU TỪ ĐƯỜNG DẪN CỐ ĐỊNH ---
+if "auto_master_df" not in st.session_state:
+    default_path = r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
+    try:
+        if os.path.exists(default_path):
+            st.session_state.auto_master_df = pd.read_csv(default_path)
+        else:
+            st.session_state.auto_master_df = None
+    except Exception:
+        st.session_state.auto_master_df = None
 
 def on_manual_change():
     state = st.session_state.manual_input
@@ -143,9 +154,15 @@ with st.sidebar:
 
     st.divider()
     st.header("🗂️ Danh mục SKU Hệ thống")
-    master_file = st.file_uploader("Tải danh mục SKU (CSV)", type="csv")
-    if master_file: master_sku_df = pd.read_csv(master_file)
-    else: master_sku_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
+    master_file = st.file_uploader("Tải danh mục SKU mới (CSV)", type="csv")
+    
+    # Ưu tiên: 1. File Upload -> 2. File G:\... (nếu có) -> 3. Dữ liệu mẫu
+    if master_file: 
+        master_sku_df = pd.read_csv(master_file)
+    elif st.session_state.auto_master_df is not None:
+        master_sku_df = st.session_state.auto_master_df
+    else: 
+        master_sku_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
     
     edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
 
