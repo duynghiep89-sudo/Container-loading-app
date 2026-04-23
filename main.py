@@ -18,9 +18,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- HÀM HỖ TRỢ (GIỮ NGUYÊN) ---
+# --- HÀM HỖ TRỢ ---
 def draw_3d_loading(bin_obj, sku_colors, sku_counts):
-    # (Giữ nguyên nội dung hàm vẽ như code cũ của bạn)
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
     fig.add_trace(go.Mesh3d(x=[0, L, L, 0], y=[0, 0, W, W], z=[0, 0, 0, 0], color='#8B4513', opacity=1, showlegend=False))
@@ -51,22 +50,21 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
 if "manual_df" not in st.session_state:
     st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
 
-# BƯỚC QUAN TRỌNG: NẠP DỮ LIỆU TỪ FILE G:\ LẦN ĐẦU
+# FIX: Nạp dữ liệu từ đường dẫn UNC tuyệt đối
 def load_initial_sku():
-    path = r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
+    # Sử dụng đường dẫn mạng bạn vừa cung cấp
+    path = r"\\10.5.4.9\gesinvn\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
     fallback = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
     
     if os.path.exists(path):
         try:
-            df = pd.read_csv(path)
-            # Kiểm tra xem file có dữ liệu không
-            if not df.empty:
-                return df
+            # Thử đọc với encoding phổ biến của file CSV xuất từ Excel
+            return pd.read_csv(path, encoding='utf-8')
         except:
-            pass
+            try: return pd.read_csv(path, encoding='latin1')
+            except: pass
     return fallback
 
-# Khởi tạo master data trong session state nếu chưa có
 if "master_sku_data" not in st.session_state:
     st.session_state.master_sku_data = load_initial_sku()
 
@@ -98,7 +96,7 @@ def on_manual_change():
     if state.get("deleted_rows"):
         st.session_state.manual_df = df.drop(state["deleted_rows"]).reset_index(drop=True)
 
-# --- GIAO DIỆN CHÍNH ---
+# --- GIAO DIỆN ---
 st.title("🚚 Loading Map - GESIN")
 
 cont_data = {
@@ -113,40 +111,32 @@ with st.sidebar:
     if c_choice == "Tùy chỉnh":
         L, W, H, M = st.number_input("Dài (mm)", value=6000), st.number_input("Rộng (mm)", value=2300), st.number_input("Cao (mm)", value=2300), st.number_input("Tải trọng (kg)", value=15000)
     else:
-        specs = cont_data[c_choice]
-        L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
-        st.success(f"📌 Thông số lọt lòng {c_choice}:")
-        st.write(f"Dài: {L}mm | Rộng: {W}mm | Cao: {H}mm")
+        specs = cont_data[c_choice]; L, W, H, M = specs[0]-20, specs[1]-20, specs[2]-30, specs[3]
+        st.success(f"📌 Thông số: {L}x{W}x{H}")
 
     st.divider()
-    st.header("🗂️ Danh mục SKU Hệ thống")
+    st.header("🗂️ Danh mục SKU")
     
-    # Kiểm tra xem file có tồn tại không để thông báo cho người dùng biết
-    if not os.path.exists(r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"):
-        st.warning("⚠️ Không tìm thấy file DMSKU.csv tại ổ G. Đang dùng dữ liệu mẫu.")
+    # Thông báo trạng thái kết nối
+    path_check = r"\\10.5.4.9\gesinvn\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
+    if os.path.exists(path_check):
+        st.success("✅ Đã nạp dữ liệu từ hệ thống (10.5.4.9)")
     else:
-        st.info("✅ Đã kết nối dữ liệu từ ổ G")
+        st.warning("⚠️ Không tìm thấy file hệ thống. Đang dùng dữ liệu mẫu.")
 
-    master_file = st.file_uploader("Tải danh mục SKU mới để ghi đè (CSV)", type="csv")
-    
+    master_file = st.file_uploader("Ghi đè bằng file local (CSV)", type="csv")
     if master_file:
         st.session_state.master_sku_data = pd.read_csv(master_file)
 
-    # Dùng session_state.master_sku_data làm nguồn dữ liệu DUY NHẤT cho editor
-    edited_master = st.data_editor(
-        st.session_state.master_sku_data, 
-        num_rows="dynamic", 
-        key="master_editor"
-    )
-    # Cập nhật ngược lại state nếu người dùng sửa trực tiếp trên bảng
+    edited_master = st.data_editor(st.session_state.master_sku_data, num_rows="dynamic", key="master_editor")
     st.session_state.master_sku_data = edited_master
 
-# --- PHẦN NHẬP DỮ LIỆU (GIỮ NGUYÊN LOGIC) ---
+# --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
 tab1, tab2 = st.tabs(["📂 Tải file CSV", "✍️ Nhập tay trực tiếp"])
 final_df = pd.DataFrame()
 with tab1:
-    uploaded_file = st.file_uploader("Kéo thả file CSV đơn hàng", type="csv")
+    uploaded_file = st.file_uploader("Kéo thả file đơn hàng", type="csv")
     if uploaded_file: final_df = pd.read_csv(uploaded_file)
 with tab2:
     sku_list = edited_master['SKU'].dropna().unique().tolist()
@@ -156,10 +146,9 @@ with tab2:
         clean_manual = st.session_state.manual_df.dropna(subset=['SKU', 'Width'])
         final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
 
-# --- XỬ LÝ TÍNH TOÁN (GIỮ NGUYÊN) ---
+# --- TÍNH TOÁN ---
 if not final_df.empty:
-    st.write("Dữ liệu tổng hợp để tính toán:")
-    st.dataframe(final_df, use_container_width=True)
+    st.write("Dữ liệu tính toán:"); st.dataframe(final_df, use_container_width=True)
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
         for col in ['Width', 'Height', 'Depth', 'Weight', 'Quantity']:
             final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
@@ -167,8 +156,7 @@ if not final_df.empty:
         if not final_df.empty:
             total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
             with st.spinner('🛠️ Đang tính toán...'):
-                packer = Packer()
-                packer.add_bin(Bin(c_choice, L, W, H, M))
+                packer = Packer(); packer.add_bin(Bin(c_choice, L, W, H, M))
                 palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf']
                 sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
                 sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
@@ -176,8 +164,7 @@ if not final_df.empty:
                     for _ in range(int(row['Quantity'])):
                         packer.add_item(Item(str(row['SKU']), float(row['Depth']), float(row['Width']), float(row['Height']), float(row['Weight'])))
                 try:
-                    packer.pack()
-                    selected_bin = packer.bins[0]
+                    packer.pack(); selected_bin = packer.bins[0]
                     st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cargo_cbm:.3f} m³")
                     st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
                     st.components.v1.html("""<script>function printPage() { window.parent.print(); }</script><button onclick="printPage()" style="background-color: #ff4b4b; color: white; padding: 15px 32px; border: none; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer;">🖨️ XUẤT FILE PDF CHO KHO (CHỈ IN SƠ ĐỒ)</button>""", height=100)
