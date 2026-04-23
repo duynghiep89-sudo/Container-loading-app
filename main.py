@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from py3dbp import Packer, Bin, Item
 import plotly.graph_objects as go
-import os
 
 st.set_page_config(page_title="Loading Map - GESIN", layout="wide")
 
@@ -27,7 +26,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- HÀM HỖ TRỢ VẼ 3D ---
+# --- HÀM HỖ TRỢ ---
+def convert_df_to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
 def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     fig = go.Figure()
     L, W, H = float(bin_obj.width), float(bin_obj.height), float(bin_obj.depth)
@@ -78,39 +80,8 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
     return fig
 
 # --- QUẢN LÝ DỮ LIỆU ---
-
-# Hàm nạp dữ liệu từ đường dẫn hệ thống
-def load_initial_sku():
-    path_unc = r"\\10.5.4.9\gesinvn\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
-    path_drive = r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
-    
-    fallback = pd.DataFrame({
-        'SKU': ['SOFA_A', 'TABLE_B'], 
-        'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 
-        'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0],
-        'Quantity': [1, 1]
-    })
-
-    for p in [path_unc, path_drive]:
-        if os.path.exists(p):
-            try:
-                # Thử đọc với các encoding khác nhau
-                df = pd.read_csv(p, encoding='utf-8')
-                if not df.empty: return df
-            except:
-                try:
-                    df = pd.read_csv(p, encoding='latin1')
-                    if not df.empty: return df
-                except:
-                    continue
-    return fallback
-
-# Khởi tạo Session State
 if "manual_df" not in st.session_state:
     st.session_state.manual_df = pd.DataFrame(columns=['SKU', 'Width', 'Height', 'Depth', 'Weight', 'Quantity'])
-
-if "master_sku_data" not in st.session_state:
-    st.session_state.master_sku_data = load_initial_sku()
 
 def on_manual_change():
     state = st.session_state.manual_input
@@ -120,7 +91,7 @@ def on_manual_change():
         idx = int(index_str)
         if "SKU" in changes:
             new_sku = changes["SKU"]
-            master_match = st.session_state.master_sku_data[st.session_state.master_sku_data['SKU'] == new_sku]
+            master_match = edited_master[edited_master['SKU'] == new_sku]
             if not master_match.empty:
                 df.at[idx, 'SKU'] = new_sku
                 df.at[idx, 'Width'] = master_match.iloc[0]['Width']
@@ -136,7 +107,7 @@ def on_manual_change():
         new_row = {'SKU': None, 'Width': 0, 'Height': 0, 'Depth': 0, 'Weight': 0, 'Quantity': 1}
         if "SKU" in row_data:
             sku_val = row_data["SKU"]
-            master_match = st.session_state.master_sku_data[st.session_state.master_sku_data['SKU'] == sku_val]
+            master_match = edited_master[edited_master['SKU'] == sku_val]
             if not master_match.empty:
                 new_row.update({
                     'SKU': sku_val, 'Width': master_match.iloc[0]['Width'],
@@ -171,31 +142,15 @@ with st.sidebar:
 
     st.divider()
     st.header("🗂️ Danh mục SKU Hệ thống")
+    st.caption("Thư mục file: `\\\\10.5.4.9\\gesinvn\\Customs\\13. Share\\06. ITEM PACKING\\`")
     
-    # Nút bấm làm mới dữ liệu
-    if st.button("🔄 Nạp lại từ Hệ thống"):
-        st.session_state.master_sku_data = load_initial_sku()
-        st.rerun()
-
-    # Kiểm tra file trực tiếp để báo trạng thái cho người dùng
-    path_check = r"\\10.5.4.9\gesinvn\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
-    if os.path.exists(path_check):
-        st.success("✅ Đã kết nối file hệ thống")
-    else:
-        st.warning("⚠️ Không tìm thấy file hệ thống. Đang dùng dữ liệu mẫu.")
-
-    master_file = st.file_uploader("Tải danh mục SKU mới (Ghi đè)", type="csv")
+    master_file = st.file_uploader("Tải DMSKU.csv từ máy tính/ổ mạng", type="csv")
     if master_file: 
-        st.session_state.master_sku_data = pd.read_csv(master_file)
+        master_sku_df = pd.read_csv(master_file)
+    else: 
+        master_sku_df = pd.DataFrame({'SKU': ['SOFA_A', 'TABLE_B'], 'Width': [850.0, 1000.0], 'Height': [900.0, 750.0], 'Depth': [2100.0, 1600.0], 'Weight': [75.0, 45.0]})
     
-    # Bảng biên tập danh mục SKU
-    edited_master = st.data_editor(
-        st.session_state.master_sku_data, 
-        num_rows="dynamic", 
-        key="master_editor"
-    )
-    # Lưu lại thay đổi nếu người dùng sửa trực tiếp trên bảng
-    st.session_state.master_sku_data = edited_master
+    edited_master = st.data_editor(master_sku_df, num_rows="dynamic", key="master_editor")
 
 # --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
@@ -236,7 +191,6 @@ if not final_df.empty:
     st.dataframe(final_df, use_container_width=True)
 
     if st.button("🚀 BẮT ĐẦU TÍNH TOÁN"):
-        # Ép kiểu dữ liệu số
         for col in ['Width', 'Height', 'Depth', 'Weight', 'Quantity']:
             final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
         final_df = final_df[final_df['Width'] > 0]
@@ -246,14 +200,12 @@ if not final_df.empty:
             with st.spinner('🛠️ Đang tính toán...'):
                 packer = Packer()
                 packer.add_bin(Bin(c_choice, L, W, H, M))
-                
                 palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf']
                 sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
                 sku_counts = final_df.groupby('SKU')['Quantity'].sum().to_dict()
 
                 for _, row in final_df.iterrows():
                     for _ in range(int(row['Quantity'])):
-                        # py3dbp sử dụng: Dài, Rộng, Cao
                         packer.add_item(Item(str(row['SKU']), float(row['Depth']), float(row['Width']), float(row['Height']), float(row['Weight'])))
                 
                 try:
@@ -267,4 +219,4 @@ if not final_df.empty:
                             🖨️ XUẤT FILE PDF CHO KHO (CHỈ IN SƠ ĐỒ)
                         </button>""", height=100)
                 except Exception as e:
-                    st.error(f"Lỗi tính toán: {e}")
+                    st.error(f"Lỗi: {e}")
