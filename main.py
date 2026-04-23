@@ -80,7 +80,6 @@ def draw_3d_loading(bin_obj, sku_colors, sku_counts):
 # --- QUẢN LÝ DỮ LIỆU ---
 
 def load_silent_sku():
-    """Hàm nạp dữ liệu ngầm, không báo lỗi ra màn hình"""
     paths = [
         r"\\10.5.4.9\gesinvn\Customs\13. Share\06. ITEM PACKING\DMSKU.csv",
         r"G:\Customs\13. Share\06. ITEM PACKING\DMSKU.csv"
@@ -90,7 +89,6 @@ def load_silent_sku():
     for p in paths:
         if os.path.exists(p):
             try:
-                # Thử nạp ngầm
                 return pd.read_csv(p)
             except:
                 continue
@@ -161,8 +159,6 @@ with st.sidebar:
 
     st.divider()
     st.header("🗂️ Danh mục SKU")
-    
-    # Chỉ giữ lại phần Upload, không hiển thị log/đường dẫn
     master_file = st.file_uploader("Tải DMSKU.csv mới (Ghi đè)", type="csv")
     if master_file: 
         st.session_state.master_sku_data = pd.read_csv(master_file)
@@ -173,7 +169,6 @@ with st.sidebar:
 # --- PHẦN NHẬP DỮ LIỆU ---
 st.subheader("📋 Nhập danh sách hàng hóa")
 tab1, tab2 = st.tabs(["📂 Tải file CSV", "✍️ Nhập tay trực tiếp"])
-
 final_df = pd.DataFrame()
 
 with tab1:
@@ -190,15 +185,7 @@ with tab2:
         "Weight": st.column_config.NumberColumn("Nặng (kg)", format="%d"),
         "Quantity": st.column_config.NumberColumn("Số lượng (Kiện)", format="%d", min_value=1, default=1)
     }
-    
-    st.data_editor(
-        st.session_state.manual_df,
-        num_rows="dynamic",
-        column_config=column_config,
-        key="manual_input",
-        on_change=on_manual_change
-    )
-    
+    st.data_editor(st.session_state.manual_df, num_rows="dynamic", column_config=column_config, key="manual_input", on_change=on_manual_change)
     if not st.session_state.manual_df.empty:
         clean_manual = st.session_state.manual_df.dropna(subset=['SKU', 'Width'])
         final_df = pd.concat([final_df, clean_manual], ignore_index=True) if not final_df.empty else clean_manual
@@ -217,6 +204,8 @@ if not final_df.empty:
             total_cargo_cbm = sum((row['Width']/1000 * row['Height']/1000 * row['Depth']/1000 * row['Quantity']) for _, row in final_df.iterrows())
             with st.spinner('🛠️ Đang tính toán...'):
                 packer = Packer()
+                # Bin trong py3dbp: Name, Width, Height, Depth, Max_Weight
+                # Tuy nhiên lưu ý: Packer mặc định dùng (Dài, Rộng, Cao) tương ứng (W, H, D) của thư viện
                 packer.add_bin(Bin(c_choice, L, W, H, M))
                 palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#bcbd22', '#17becf']
                 sku_colors = {sku: palette[i % len(palette)] for i, sku in enumerate(final_df['SKU'].unique())}
@@ -229,8 +218,29 @@ if not final_df.empty:
                 try:
                     packer.pack()
                     selected_bin = packer.bins[0]
+                    
+                    # --- TÍNH KHOẢNG CÁCH CÒN LẠI ĐẾN TRẦN ---
+                    # z-axis trong py3dbp là Depth (trong code này ta gán Item height vào Depth của thư viện)
+                    # Tìm tọa độ đỉnh cao nhất (position_z + height)
+                    max_z_reached = 0
+                    for item in selected_bin.items:
+                        # item.get_dimension()[2] là chiều cao (depth trong logic thư viện)
+                        current_top = float(item.position[2]) + float(item.get_dimension()[2])
+                        if current_top > max_z_reached:
+                            max_z_reached = current_top
+                    
+                    gap_to_roof = H - max_z_reached
+                    # -----------------------------------------
+
                     st.info(f"📊 Container: {c_choice} | Tổng hàng: {total_cargo_cbm:.3f} m³")
+                    
+                    # Hiển thị khoảng hở trần với định dạng nổi bật
+                    c1, c2 = st.columns(2)
+                    c1.metric("Chiều cao đã xếp (Max)", f"{max_z_reached:.0f} mm")
+                    c2.metric("Khoảng trống đến trần", f"{gap_to_roof:.0f} mm", delta_color="normal")
+
                     st.plotly_chart(draw_3d_loading(selected_bin, sku_colors, sku_counts), use_container_width=True)
+                    
                     st.components.v1.html("""
                         <script>function printPage() { window.parent.print(); }</script>
                         <button onclick="printPage()" style="background-color: #ff4b4b; color: white; padding: 15px 32px; border: none; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer;">
